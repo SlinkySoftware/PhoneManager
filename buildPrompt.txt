@@ -1,0 +1,320 @@
+# GitHub Copilot Prompt – Phone Provisioning Management Application
+
+## Role & Objective
+
+You are assisting in building a **high-availability phone provisioning and configuration management system**.
+
+The system consists of:
+
+- **Frontend**: Quasar Framework (Vue 3, Quasar CLI)
+- **Backend**: Django + Django REST Framework
+- **Database**: PostgreSQL or SQLite3
+- **Deployment**:
+  - Bare-metal Linux servers
+  - Containerised (Docker + docker-compose)
+- **Topology**: Multiple backend instances behind a load balancer (stateless)
+
+The application provisions SIP devices by serving **vendor-specific configuration files over HTTP**, based on the device MAC address.  
+A web UI is used by administrators to manage devices, lines, sites, and SIP configuration.
+
+---
+
+## Overarching Branding
+
+The application should be called "Phone Provisioning Manager".  It is being developed by "Slinky Software" and is Copyright 2026.
+
+This branding should be used on all copyright headers, UI elements, and documentation. 
+
+---
+
+## Repository Layout (Mandatory)
+
+The repository must follow this structure:
+
+```
+/
+├── .gitignore  # Ignore file appropriate for project
+├── backend/ # Django project
+├── frontend/ # Quasar (Vue 3) project
+├── docs/ # All documentation
+├── docker/docker-compose.yml  # All docker files
+├── docker/.env.example
+├── LICENSE.md
+└── README.md
+```
+
+- All documentation generated must be placed under `docs/`, and should be in Markdown format
+- The Quasar project must live in `frontend/`
+- The Django project must live in `backend/`
+- All Docker configuration must externalise configuration via `.env` files, and be stored in `docker/`
+- A **GPL v3 license** must be applied to the project and referenced in generated files where appropriate
+- A README.md file should live in the project root and be updated whenever the project is changed.
+
+---
+
+## High-Level Architecture Requirements
+
+### Backend (Django)
+
+- Django REST Framework for APIs
+- PostgreSQL as the datastore for production workloads. SQLite3 is acceptable for development platforms.
+- Stateless application nodes
+- No rendered configuration files stored on disk
+- Configuration generation must be deterministic and reproducible from database state
+- Supports:
+  - REST APIs for frontend
+  - HTTP provisioning endpoints for devices
+
+### Frontend (Quasar / Vue 3)
+
+- Quasar CLI–scaffolded SPA
+- Default **dark mode**
+- **Green theme**
+- Authentication:
+  - Local users
+  - SAML 2.0 (Okta / Entra ID)
+- Role-based access:
+  - `Admin`
+  - `Read Only`
+- Dynamic UI generation driven by backend-provided JSON schemas
+
+---
+
+## Provisioning Flow
+
+- Phones retrieve provisioning URL via DHCP
+- Phones request configuration using vendor-defined URL formats
+- MAC address is the unique identifier
+- Backend returns a vendor-specific `.cfg` file
+- Provisioning endpoints are unauthenticated but logged
+
+---
+
+## Supported Devices (Initial Scope)
+
+- **Yealink SIP-T33G**
+- **Yealink W79P** (base station; multiline)
+- **Grandstream HT812** (2-port FXS ATA)
+
+Vendor references:
+
+- Example configs: `docs/examples/<model>.cfg`
+- Vendor specifications: `docs/vendor/<model>.pdf`
+
+Vendor documentation is authoritative.
+
+---
+
+## Data Model Definition
+
+The data model must reflect the following **frontend-oriented structure**.  
+Items marked `(FK)` must be foreign-key references.
+
+### Device
+
+- Mac Address (Text)
+- Description (Text)
+- Line 1 (FK)
+- Line 2..n (FK, up to Device Type maximum)
+- Device Type (FK)
+- Site (FK)
+- Device Specific Configuration (JSON, driven by Device Type)
+
+### Device Type
+
+- Common Configuration Options (JSON)
+
+### SIP Servers
+
+- Name (Text)
+- Host Name / IP (Text)
+- Port (Integer)
+- Transport (ENUM: `TLS`, `UDP`, `TCP`)
+
+### Site
+
+- Name (Text)
+- Primary SIP Server (FK)
+- Secondary SIP Server (FK)
+
+### Line
+
+- Name (Text)
+- Directory Number (Text, +E164 format)
+- Registration Account (Text)
+- Registration Password (Encrypted at rest)
+- Is Shared (Boolean)
+
+---
+
+## Device Type Rendering Architecture
+
+Each device type **must be implemented as a Python class** responsible for rendering its configuration.
+
+Each class must expose:
+
+- `TypeID` (string, unique, use class name)
+- `Manufacturer` (Text)
+- `Model` (Text)
+- `NumberOfLines` (Integer)
+- `CommonOptions` (JSON object)
+- `DeviceSpecificOptions` (JSON object)
+
+These classes form the authoritative definition of:
+- Supported devices
+- Configuration schema
+- Rendering logic
+
+---
+
+## Configuration Options JSON Schema
+
+Both **Common Options** and **Device Specific Options** must follow this structure:
+
+```json
+{
+  "sections": [
+    {
+      "friendlyName": "Section Group Name",
+      "uiOrder": 1,
+      "options": [
+        {
+          "optionId": "myOptionId",
+          "friendlyName": "Front End Option Name",
+          "default": "defaultValue",
+          "mandatory": true,
+          "type": "text | number | boolean",
+          "uiOrder": 1
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Behaviour Requirements
+
+- Sections and options must be rendered in ascending `uiOrder`
+- Items without `uiOrder` appear after ordered items
+- `optionId` is used:
+  - As the database key
+  - Passed back to the renderer
+- The frontend must dynamically generate widgets from this schema
+- Defaults must be applied automatically where values are not set
+
+## Device Types UI Behaviour
+
+- The Device Types page must:
+  - Enumerate all loaded device type classes
+  - Display Manufacturer and Model
+  - Render `CommonOptions`
+- Common options are stored as JSON indexed by `TypeID`
+- Each Device instance renders `DeviceSpecificOptions` for that device
+
+
+## Backend API Requirements
+- CRUD APIs for:
+  - Devices
+  - Lines
+  - Sites
+  - SIP Servers
+- Partial Read-only APIs for:
+  - Device Types - This must be RW for the `CommonOptions` values, but no other options
+- Validation:
+  - MAC address uniqueness and format
+  - Line count enforcement
+- Authentication:
+  - Session or token-based
+- Authorization:
+  - Admin vs Read Only
+
+## Provisioning Endpoints
+- Unauthenticated
+- Logged (MAC, IP, timestamp)
+- Appropriate HTTP error codes for:
+  - Unknown devices
+  - Disabled devices
+  
+  
+## Configuration Rendering Layer
+
+Renderer structure example:
+```
+backend/
+└── provisioning/
+    └── device_types/
+        ├── base.py
+        ├── yealink_t33g.py
+        ├── yealink_w79p.py
+        └── grandstream_ht812.py
+```
+
+Each renderer:
+
+- Accepts a fully-populated Device object
+- Outputs configuration text
+- Uses `optionId` values for lookup
+- Contains no frontend logic
+- Contains no hardcoded UI labels
+
+---
+
+## Frontend Requirements (Quasar)
+
+- Quasar CLI project (`quasar dev` must work)
+- Axios for API access
+- Central auth store (Pinia or Vuex)
+- Dynamic forms driven by options JSON
+- Dark mode default
+- Green theme
+- Environment-based configuration
+
+---
+
+## Deployment Requirements
+
+### Bare-Metal
+
+- Provide startup instructions
+- Provide systemd service examples where applicable
+
+### Containerised
+
+- Dockerfiles for frontend and backend
+- `docker-compose.yml` including:
+  - Backend
+  - Frontend
+  - PostgreSQL
+- All configuration externalised to `.env` files
+- No secrets committed to source control
+
+---
+
+## Licensing Requirements
+
+- **GPL v3** must be applied
+- `LICENSE` file must be included
+- Generated source files should reference the license where appropriate
+- Documentation must reference the license
+
+---
+
+## Explicit Exclusions
+
+- Do NOT generate unit tests or test frameworks
+- Do NOT store rendered configs on disk
+- Do NOT assume a single backend instance
+- Do NOT hardcode vendor-specific configuration outside device renderer classes
+
+---
+
+## Development Order Guidance
+
+1. Django backend scaffolding
+2. Data model and migrations
+3. Device type renderer framework
+4. Provisioning endpoints
+5. Quasar frontend scaffolding
+6. Dynamic UI generation
+7. Deployment artefacts and documentation
+
