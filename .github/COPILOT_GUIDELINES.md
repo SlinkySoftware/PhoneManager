@@ -1,0 +1,350 @@
+# GitHub Copilot AI Coding Guidelines
+
+**Project:** Phone Provisioning Manager
+**Developer:** Slinky Software  
+**License:** GPL-3.0-or-later
+
+## Project Overview
+
+This is a high-availability phone provisioning and configuration management system designed for stateless, multi-instance deployment. The system provisions SIP devices by serving vendor-specific configuration files over HTTP and provides a web UI for administrative management.
+
+### Tech Stack
+- **Backend:** Django 6.0.1, Django REST Framework, PostgreSQL 17 (SQLite3 for dev)
+- **Frontend:** Quasar v2.18, Vue 3, Pinia, Axios
+- **Authentication:** JWT (local users), SAML 2.0
+- **Deployment:** Docker Compose, bare-metal Linux
+
+### Architecture Principles
+1. **Stateless Backend:** All Django instances must be stateless. No local file storage, all state in PostgreSQL.
+2. **Deterministic Configuration:** Device configs generated on-demand from database state, never cached on disk.
+3. **Horizontal Scaling:** Application must work with multiple backend instances behind a load balancer.
+4. **Database-Driven:** Single source of truth is PostgreSQL/SQLite database.
+
+---
+
+## Code Standards
+
+### General Rules
+- **All source files MUST include GPL v3 header:**
+  ```python
+  # SPDX-License-Identifier: GPL-3.0-or-later
+  # Copyright (c) <year> Slinky Software
+  ```
+  ```javascript
+  /* SPDX-License-Identifier: GPL-3.0-or-later
+   * Copyright (c) <year> Slinky Software
+   */
+  ```
+- **Environment Variables:** Never hardcode secrets. Use environment variables with sensible defaults.
+- **Logging:** Log all significant actions, especially provisioning requests and errors.
+- **Error Handling:** Graceful error handling with meaningful messages for debugging.
+
+### Python/Django Standards
+- Follow PEP 8 style guide
+- Use type hints where appropriate
+- Maximum line length: 120 characters
+- Use Django ORM exclusively (no raw SQL unless absolutely necessary)
+- Database queries should use `select_related()` and `prefetch_related()` to avoid N+1 problems
+- All models require `__str__()` methods
+- Use Django's validation framework
+
+**Example:**
+```python
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) <year> Slinky Software
+
+from django.db import models
+from typing import Optional
+
+class Device(models.Model):
+    """Represents a physical SIP device."""
+    mac_address = models.CharField(max_length=17, unique=True)
+    friendly_name = models.CharField(max_length=255)
+    
+    def __str__(self) -> str:
+        return f"{self.friendly_name} ({self.mac_address})"
+```
+
+### Vue/JavaScript Standards
+- Use Vue 3 Composition API (not Options API)
+- Use `<script setup>` syntax
+- Follow ESLint and Prettier configurations
+- Component names: PascalCase for files, kebab-case in templates
+- Props and events should be documented with JSDoc comments
+- Use Pinia stores for state management (not Vuex)
+- API calls should go through centralized service modules
+
+**Example:**
+```vue
+<!-- SPDX-License-Identifier: GPL-3.0-or-later
+     Copyright (c) <year> Slinky Software -->
+
+<template>
+  <q-card>
+    <q-card-section>{{ device.friendly_name }}</q-card-section>
+  </q-card>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue';
+import { deviceService } from '@/services/deviceService';
+
+const device = ref(null);
+
+onMounted(async () => {
+  // Load device data
+});
+</script>
+```
+
+---
+
+## Django Backend Guidelines
+
+### Models (phoneprov/api/models.py)
+- Use explicit field names (avoid ambiguous abbreviations)
+- Include `help_text` for all fields
+- Use `related_name` for foreign keys
+- Add database indexes for frequently queried fields
+- Use `choices` for enums instead of magic strings
+- All timestamps: `auto_now_add=True` for created, `auto_now=True` for updated
+
+### Serializers (phoneprov/api/serializers.py)
+- One serializer per model (may have detail/list variants)
+- Use `read_only_fields` for computed or auto-generated fields
+- Validate data in `validate()` or `validate_<field>()` methods
+- Keep business logic in models/views, not serializers
+
+### Views (phoneprov/api/views.py)
+- Use Django REST Framework ViewSets
+- Authenticated endpoints require `permission_classes = [IsAuthenticated]`
+- Use `@action` decorator for custom endpoints
+- Return appropriate HTTP status codes (200, 201, 400, 404, 500)
+- Optimize queries with `select_related()`, `prefetch_related()`
+
+### Provisioning Endpoints (phoneprov/provisioning/)
+- **MUST be unauthenticated** (phones don't have credentials)
+- **MUST log every request** to `ProvisioningLog` table
+- Return 404 for unknown MACs, 403 for disabled devices, 200 with config for success
+- Use `@csrf_exempt` decorator (phones don't have CSRF tokens)
+- Handle MAC address normalization (case-insensitive, : vs - separators)
+
+### Renderer System (phoneprov/provisioning/renderers/)
+- Each vendor has a dedicated renderer class inheriting `BaseRenderer`
+- Renderers MUST be deterministic (same input = same output)
+- Configuration generated from database only, no external files
+- Register new renderers in `RendererFactory.RENDERERS`
+
+**Adding a New Renderer:**
+```python
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) <year> Slinky Software
+
+from phoneprov.provisioning.renderers.base import BaseRenderer
+from phoneprov.api.models import Device
+
+class CiscoRenderer(BaseRenderer):
+    """Configuration renderer for Cisco SIP devices."""
+    
+    def render(self, device: Device) -> str:
+        self._reset()
+        self._add_comment(f"Config for {device.friendly_name}")
+        
+        # Add device-specific configuration
+        for line in device.lines.filter(is_enabled=True):
+            self._add_line(f"line_{line.line_index}_name", line.display_name)
+            # ... more config
+        
+        return self.config
+```
+
+---
+
+## Frontend Guidelines
+
+### Project Structure
+- **pages/**: Route components (one per page)
+- **components/**: Reusable UI components
+- **layouts/**: Page layouts (MainLayout, LoginLayout, etc.)
+- **stores/**: Pinia state stores
+- **services/**: API client modules
+- **router/**: Vue Router configuration
+
+### Routing (src/router/index.js)
+- Protected routes require `meta: { requiresAuth: true }`
+- Use lazy loading for page components: `component: () => import('@/pages/Dashboard.vue')`
+- Redirect to `/login` if unauthenticated user accesses protected route
+
+### State Management (src/stores/)
+- Use Pinia with Composition API syntax
+- Store JWT tokens in localStorage
+- Auth store provides: `isAuthenticated`, `token`, `user`, `setToken()`, `logout()`
+- Don't duplicate API data in stores (fetch on-demand)
+
+### API Services (src/services/)
+- Centralized in `deviceService.js`, `apiClient.js`
+- All API calls use Axios with interceptors for auth headers
+- Return raw Axios response (component handles data extraction)
+- Handle errors gracefully with try/catch
+
+**Example Service:**
+```javascript
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (c) <year> Slinky Software
+ */
+
+import apiClient from './api';
+
+export const deviceService = {
+  list: (params = {}) => apiClient.get('/api/devices/', { params }),
+  
+  get: (id) => apiClient.get(`/api/devices/${id}/`),
+  
+  create: (data) => apiClient.post('/api/devices/', data),
+  
+  update: (id, data) => apiClient.patch(`/api/devices/${id}/`, data),
+  
+  delete: (id) => apiClient.delete(`/api/devices/${id}/`)
+};
+```
+
+### UI Components
+- Use Quasar components (q-btn, q-table, q-card, etc.)
+- Show loading states with `q-loading` or `:loading` props
+- Display errors/success with `$q.notify()`
+- Use `$q.dialog()` for confirmations (e.g., before delete)
+
+---
+
+## Database Guidelines
+
+### Migrations
+- Run `python manage.py makemigrations` after model changes
+- Review generated migrations before committing
+- Never edit existing migrations (create new ones)
+- Test migrations on fresh database before production
+
+### Queries
+- Avoid N+1 queries: use `select_related()` for ForeignKey, `prefetch_related()` for ManyToMany
+- Filter in database, not Python: `Model.objects.filter()` not list comprehension
+- Use `only()` and `defer()` for large models if not all fields needed
+- Add indexes to fields used in `filter()`, `order_by()`
+
+---
+
+## Security Guidelines
+
+### Authentication & Authorization
+- All API endpoints except `/provisioning/*` require authentication
+- JWT tokens expire after 1 hour (refresh tokens after 7 days)
+- Passwords stored with Django's PBKDF2 hasher (default)
+- Never log passwords or tokens
+
+### Provisioning Endpoint Security
+- Provisioning endpoints are **intentionally unauthenticated** (phones identify by MAC)
+- Log all requests with MAC, IP, User-Agent to `ProvisioningLog`
+- Return generic errors to prevent information leakage
+- Rate limiting recommended (future enhancement)
+
+### CORS
+- Whitelist frontend origin only in `CORS_ALLOWED_ORIGINS`
+- Never use `CORS_ALLOW_ALL_ORIGINS = True` in production
+
+### Environment Variables
+- Store secrets in `.env` file (never commit `.env`)
+- Provide `.env.example` with dummy values
+- Use `os.getenv('KEY', 'default')` pattern
+
+---
+
+## Documentation Guidelines
+
+### Code Comments
+- Document WHY, not WHAT (code should be self-explanatory)
+- Use docstrings for all functions/classes (Python)
+- Use JSDoc for complex functions (JavaScript)
+
+### API Documentation
+- Keep [docs/API.md](../docs/API.md) updated with endpoint changes
+- Include request/response examples
+- Document all query parameters, request body fields, response fields
+
+### Architecture Documentation
+- Update [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) for major design changes
+- Document deployment changes in [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md)
+
+### Readme Documentation
+- Update [README.md](../README.md) with high-level project infromation
+
+---
+
+## Deployment Considerations
+
+### Docker
+- All services defined in `docker-compose.yml`
+- Use environment variables for configuration
+- Volumes for persistence (Postgres data)
+- Health checks for dependencies
+
+### Bare Metal
+- Scripts in `scripts/` for start/stop operations
+- Use `venv` for Python dependencies
+- Run gunicorn for production (not `runserver`)
+- Use supervisor or systemd for process management
+
+### Stateless Design
+- Never store files on local filesystem (except logs)
+- All state in database
+- Configuration generated on-demand
+- Can add/remove Django instances without coordination
+
+---
+
+## Common Patterns
+
+### Adding a Device Type
+1. Create renderer in `phoneprov/provisioning/renderers/<vendor>.py`
+2. Ensure rendered exports the required fields
+3. Register renderer in `RendererFactory`
+4. Test with sample device
+
+### Adding an API Endpoint
+1. Create model (if needed) in `phoneprov/api/models.py`
+2. Create serializer in `phoneprov/api/serializers.py`
+3. Create viewset in `phoneprov/api/views.py`
+4. Register in router in `phoneprov/api/urls.py`
+5. Add frontend service method in `src/services/deviceService.js`
+6. Create UI component/page to consume endpoint
+
+### Adding a Frontend Page
+1. Create Vue component in `src/pages/MyPage.vue`
+2. Add route in `src/router/index.js`
+3. Add navigation link in `src/layouts/MainLayout.vue`
+4. Add API service calls as needed
+
+---
+
+## Questions to Ask Before Coding
+
+1. **Does this maintain stateless backend?** (No local files, all DB)
+2. **Is this secure?** (Auth required? Secrets in env?)
+3. **Does this scale horizontally?** (Works with multiple instances?)
+4. **Is this deterministic?** (Same input = same output?)
+5. **Are GPL headers included?** (All source files)
+6. **Are errors logged appropriately?** (Debugging info)
+7. **Is documentation updated?** (API docs, architecture docs)
+
+---
+
+## Resources
+
+- [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) - System design and architecture
+- [docs/API.md](../docs/API.md) - REST API reference
+- [docs/INSTALLATION.md](../docs/INSTALLATION.md) - Setup instructions
+- [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) - Production deployment guide
+- [CONTRIBUTING.md](../CONTRIBUTING.md) - Contribution guidelines
+- [README.md](../README.md) - Project overview
+
+---
+
+**Remember:** This system must be stateless, scalable, and deterministic. All source code is GPL v3, copyright Slinky Software.
