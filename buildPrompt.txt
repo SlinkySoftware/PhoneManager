@@ -92,16 +92,8 @@ The repository must follow this structure:
 
 ## Supported Devices (Initial Scope)
 
-- **Yealink SIP-T33G**
-- **Yealink W79P** (base station; multiline)
-- **Grandstream HT812** (2-port FXS ATA)
-
-Vendor references:
-
-- Example configs: `docs/examples/<model>.cfg`
-- Vendor specifications: `docs/vendor/<model>.pdf`
-
-Vendor documentation is authoritative.
+- No production-ready DeviceTypes are supported by default. 
+- An example DeviceType showing how a renderer is implemented must be supplied, with example configuration parameters.
 
 ---
 
