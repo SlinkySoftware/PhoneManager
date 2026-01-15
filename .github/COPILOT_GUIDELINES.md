@@ -22,6 +22,25 @@ This is a high-availability phone provisioning and configuration management syst
 
 ---
 
+## Development Environment Setup
+
+### Python Virtual Environment
+**IMPORTANT:** Always use the Python virtual environment when executing Python or pip commands in the backend.
+
+**Before any backend Python/pip commands, activate the venv:**
+```bash
+cd backend
+source .venv/bin/activate
+```
+
+Or use the venv Python directly without activation:
+```bash
+.venv/bin/python manage.py migrate
+.venv/bin/pip install -r requirements.txt
+```
+
+---
+
 ## Code Standards
 
 ### General Rules
@@ -301,6 +320,16 @@ export const deviceService = {
 ---
 
 ## Common Patterns
+
+### Python Commands in Backend
+**Always use the venv when running Python or pip commands:**
+```bash
+# Option 1: Activate venv first
+cd backend && source .venv/bin/activate && python manage.py migrate
+
+# Option 2: Use venv Python directly (preferred for scripts)
+.venv/bin/python manage.py migrate
+```
 
 ### Adding a Device Type
 1. Create renderer in `phoneprov/provisioning/renderers/<vendor>.py`

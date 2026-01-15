@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "corsheaders",
     "rest_framework",
     "django_filters",
     "core.apps.CoreConfig",
@@ -29,6 +30,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -101,3 +103,18 @@ REST_FRAMEWORK = {
         "rest_framework.filters.SearchFilter",
     ],
 }
+
+# CORS Configuration
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:9000",
+    "http://127.0.0.1:9000",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+if DEBUG:
+    CORS_ALLOWED_ORIGINS += [
+        "http://127.0.0.1:9000",
+        "http://localhost:8000",
+    ]

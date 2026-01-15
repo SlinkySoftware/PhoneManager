@@ -1,36 +1,27 @@
 /*
- * Quasar Framework configuration
+ * Quasar Framework configuration for @quasar/app-vite
  */
-import { configure } from 'quasar/wrappers';
-
-export default configure(() => ({
-  supportTS: false,
-  cssAddon: true,
-  extras: ['material-icons'],
-  build: {
-    target: {
-      browser: ['es2022', 'edge105', 'firefox104', 'chrome110', 'safari16'],
-      node: 'node20'
+export default function () {
+  return {
+    framework: {
+      config: {
+        dark: 'auto',
+        brand: {
+          primary: '#0fa36b',
+          secondary: '#0b6e4f',
+          accent: '#8af3c4'
+        }
+      },
+      lang: 'en-US',
+      iconSet: 'material-icons',
+      plugins: []
     },
-    env: {
-      VITE_API_BASE: process.env.VITE_API_BASE || 'http://localhost:8000/api'
+    build: {
+      vueRouterMode: 'history'
+    },
+    devServer: {
+      port: 9000,
+      open: false
     }
-  },
-  devServer: {
-    https: false,
-    port: 9000,
-    open: false
-  },
-  framework: {
-    config: {
-      dark: true,
-      brand: {
-        primary: '#0fa36b',
-        secondary: '#0b6e4f',
-        accent: '#8af3c4'
-      }
-    },
-    plugins: []
-  },
-  animations: []
-}));
+  };
+}

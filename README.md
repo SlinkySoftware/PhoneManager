@@ -9,27 +9,40 @@ High-availability phone provisioning and configuration management system by Slin
 - docker/: Containerisation assets
 
 ## Quick Start (Development)
-1. Create Python virtualenv and install backend deps:
-   ```bash
-   cd backend
-   python -m venv .venv && source .venv/bin/activate
-   pip install -r requirements.txt
-   cp .env.example .env
-   python manage.py migrate
-   python manage.py runserver 0.0.0.0:8000
-   ```
-2. Setup frontend:
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
-3. Containers (backend + frontend + Postgres):
-   ```bash
-   cd docker
-   cp .env.example .env
-   docker compose up --build
-   ```
+
+### Backend Setup
+```bash
+cd backend
+
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies and migrate
+pip install -r requirements.txt
+cp .env.example .env
+python manage.py migrate
+python manage.py createsuperuser  # Create admin user
+
+# Start backend server
+python manage.py runserver 0.0.0.0:8000
+```
+
+**Important:** Always activate the venv with `source .venv/bin/activate` before running any `python` or `pip` commands in the backend directory.
+
+### Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### Docker Setup (All Services)
+```bash
+cd docker
+cp .env.example .env
+docker compose up --build
+```
 
 ## Key Features (scaffolded)
 - REST APIs for devices, lines, sites, SIP servers
