@@ -1,0 +1,77 @@
+The following settings should be exposed for both the Yealink SIP-T33G and W70B base stations
+
+Network
+- Local RTP Port Min
+- Local RTP Port Max
+- Registration Random
+- LLDP Active
+- CDP Active
+- Voice QoS DSCP
+- SIP QoS DSCP
+
+Lines - 4x Max on SIP-T33G and 10x Max on W70B
+ - Active
+ - Label
+ - Display Name
+ - Register Name
+ - Username
+ - Password
+ - 2x Servers
+   - SIP Host
+   - SIP Port
+   - Transport
+   - Server Expires
+   - Retry Counts
+   
+Advanced (Per account in config, global in tool)
+ - RPort
+ - DTMF Type
+ - Session Timer
+ - Session Expires
+ - Session Refresher
+ - RTP Encruyption
+ - SIP Send MAC
+ - SIP Send Line
+ - Early Media
+ - VQ RTCP-XR Collector Name, Address, port
+
+Codec Order (Per account in config, global in tool)
+
+Features
+ - Call Waiting
+ - RFC 2543 Hold
+ - Save Call Log
+ - Accept SIP Trust Server Only
+ - Call List Show Number
+ - DHCP Hostname
+ 
+ Settings General
+  - Timezone > From Site
+  - Daylight Savings > From Site
+  - Location > From Site
+  - NTP Primary Server
+  - NTP Secondary Server
+  - Update Interval   
+ 
+ Dial Plan
+ -> This should be associated to a site. Need input and output rules. Should be translated to device specific commands.
+ 
+ Setting Voice Monitoring 
+  - VQ RTCP-XR Session Report
+  - VQ RTCP XR Interval Report
+  - Voice RTCP-XR Report
+  
+  Security 
+  - Admin Password
+  
+  Autoprovisioning settings should be statically defined.
+  
+  
+  Additional Requirements for W70B Base
+    Handset assignment - 
+       Handset Name
+       Lines to handsets for incoming (multiple)
+       Lines to handsets for outgoing (single)
+   Phone Lock - Emergency
+   Alarm Button Configuration
+   
