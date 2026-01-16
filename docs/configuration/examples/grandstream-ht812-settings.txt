@@ -1,0 +1,74 @@
+Legend:
+* = Device Type Common Configurable
+$ = Device Deployment Configurable
+> = Hard coded
+@ = From site linked data (Dial Plan and timezone)
+^ = From linked line
+===========
+
+*Web Access Mode
+*SSH Enabled
+*Enable SNMP
+*Time Zone
+*Device Mode - WAN Only or Bridge (disable NAT)
+>Respond to ICMP (always on)
+>Enable LAN DHCP (always off)
+$Admin Password 
+*Firmware Upgrade URL
+*Config Server URL
+*Automatic Upgrade 
+>Disable TR069 (always off)
+*Enable SNMP 
+*- Trap IP, Trap Port
+*- Poll Community
+*- Trap Community
+
+>Tones - Hard coded to AU - Use values in example xml file
+> - Ring Cadence
+> - Dial Tone
+> - Ringback Tone
+> - Busy Tone
+> - Reorder Tone
+> - Confirmation Tone
+
+*NTP Server
+*Disable Weak TLS Cipher
+*Min TLS Version
+*Max TLS Version
+
+Profile 1
+$ - Primary SIP Server
+$ - Failover SIP Server
+$ - From Domain
+$ - SIP Transport
+> - Unregister on reboot (hard coded ot yes)
+> - Outgoing Call without Registration: (hard coded to no)
+* - Layer 3 QoS SIP DSCP & RTP DSCP
+* - RTP Port
+> - Check SIP User ID for incoming INVITE: 	Hard coded to yes
+> - Allow Incoming SIP Messages from SIP Proxy Only: Hard coded to yes
+> - Add MAC in User-Agent:  hard coded to yes to all sip
+> - Use MAC Header:  - hard coded to Yes to all request sip
+> - RFC2543 Hold:  hard coded to no.
+> - Disable Call Waiting: hard code to yes
+* - Enable S100 rel
+* - Session Expiration
+* - Min-Se
+* - Enable Session Timer
+* - Preferred Codec order
+> - SLIC Setting: Hard code to Australia
+> - Caller ID Scheme:  Hard code to ETSI-FSK prior to ringing with LR+DTAS
+@ - Dial Plan
+> - Caller Request Timer: hard code to yes
+> - Caller Request Timer: hard code to yes
+
+FXS Ports - Two ports total - 
+^ - SIP User Id
+^ - Authenticate ID
+^ - Password
+^ - Display Name
+> - Profile ID (always 1)
+> - Hunting Group (alsways none)
+> - RequestURI Routing ID (blank)
+^ - Enable Port (if Line assigned)
+$ - Offhook Autodial number - create this option per available line.
