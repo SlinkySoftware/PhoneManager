@@ -92,6 +92,11 @@ class Device(models.Model):
 - Props and events should be documented with JSDoc comments
 - Use Pinia stores for state management (not Vuex)
 - API calls should go through centralized service modules
+- **IMPORTANT:** Follow validation, error handling, and user feedback patterns documented in `docs/FRONTEND_GUIDELINES.md`
+  - All form fields must have validation rules
+  - All API errors must be displayed to users
+  - All delete operations must have confirmation dialogs
+  - Use consistent error message extraction patterns
 
 **Example:**
 ```vue
