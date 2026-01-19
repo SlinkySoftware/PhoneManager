@@ -10,6 +10,11 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Determine data directory - use var/data/ if it exists, otherwise backend directory
+_var_data_dir = BASE_DIR.parent / "var" / "data"
+_var_data_dir.mkdir(parents=True, exist_ok=True)
+DATA_DIR = _var_data_dir
+
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-secret-key")
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",") if h.strip()]
@@ -61,7 +66,7 @@ WSGI_APPLICATION = "phone_manager.wsgi.application"
 ASGI_APPLICATION = "phone_manager.asgi.application"
 
 _db_engine = os.getenv("DJANGO_DB_ENGINE", "django.db.backends.sqlite3")
-_db_name = os.getenv("DJANGO_DB_NAME", BASE_DIR / "db.sqlite3")
+_db_name = os.getenv("DJANGO_DB_NAME", DATA_DIR / "db.sqlite3")
 
 DATABASES = {
     "default": {
