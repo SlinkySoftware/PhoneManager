@@ -174,7 +174,8 @@ start_frontend() {
     fi
     
     cd "$FRONTEND_DIR"
-    npm run dev >> "$FRONTEND_LOG" 2>&1 &
+    # Start with setsid to create new process group, allowing us to kill all children
+    setsid npm run dev >> "$FRONTEND_LOG" 2>&1 &
     local pid=$!
     echo $pid > "$FRONTEND_PID_FILE"
     
@@ -198,20 +199,25 @@ stop_frontend() {
     local pid=$(cat "$FRONTEND_PID_FILE")
     print_status "info" "Stopping frontend (PID: $pid)..."
     
-    if kill "$pid" 2>/dev/null; then
+    # Kill the process group (negative PID kills all children)
+    if kill -0 "$pid" 2>/dev/null; then
+        # First try to kill the process group gracefully
+        kill -- -$pid 2>/dev/null || true
         sleep 1
-        # Force kill if still running
+        
+        # If still running, force kill
         if kill -0 "$pid" 2>/dev/null; then
-            kill -9 "$pid" 2>/dev/null || true
+            kill -9 -- -$pid 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
         fi
-        rm -f "$FRONTEND_PID_FILE"
-        print_status "stopped" "Frontend stopped"
-        return 0
-    else
-        rm -f "$FRONTEND_PID_FILE"
-        print_status "info" "Frontend was not running"
-        return 0
     fi
+    
+    # Additional cleanup: find any remaining node processes on dev port (5173, 3000, 9000)
+    pkill -f "node.*dev.*port" 2>/dev/null || true
+    pkill -f "vite" 2>/dev/null || true
+    
+    rm -f "$FRONTEND_PID_FILE"
+    print_status "stopped" "Frontend stopped"
+    return 0
 }
 
 status_frontend() {
