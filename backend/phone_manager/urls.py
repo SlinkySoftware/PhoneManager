@@ -15,6 +15,7 @@ router.register(r"device-types", provisioning_views.DeviceTypeViewSet, basename=
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("api/auth/login/", core_views.login, name="login"),
     path("api/", include(router.urls)),
     path("provision/", include("provisioning.urls")),
 ]

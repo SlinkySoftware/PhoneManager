@@ -66,9 +66,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import axios from 'axios';
-
-const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:8000/api' });
+import api from '../api';
 
 const sites = ref([]);
 const sipServers = ref([]);

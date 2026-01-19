@@ -37,12 +37,11 @@
 
 <script setup>
 import { onMounted, ref } from 'vue';
-import axios from 'axios';
+import api from '../api';
 
 const deviceTypes = ref([]);
 const selected = ref(null);
 const showDialog = ref(false);
-const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:8000/api' });
 
 const loadTypes = async () => {
   const { data } = await api.get('/device-types/');

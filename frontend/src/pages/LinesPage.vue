@@ -48,9 +48,7 @@
 
 <script setup>
 import { onMounted, ref } from 'vue';
-import axios from 'axios';
-
-const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:8000/api' });
+import api from '../api';
 
 const lines = ref([]);
 const loading = ref(false);
