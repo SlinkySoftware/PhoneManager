@@ -3,11 +3,12 @@
     <div class="text-h5 q-mb-md">Device Types</div>
     <q-card flat bordered class="bg-dark">
       <q-card-section>
-        <q-btn color="primary" flat icon="refresh" label="Refresh" @click="loadTypes" />
+        <q-btn color="primary" flat icon="refresh" label="Refresh" @click="loadTypes" :loading="loading" />
       </q-card-section>
       <q-separator />
       <q-card-section>
-        <q-list bordered separator>
+        <q-linear-progress v-if="loading" indeterminate color="primary" />
+        <q-list v-else bordered separator>
           <q-item v-for="dt in deviceTypes" :key="dt.typeId">
             <q-item-section>
               <q-item-label class="text-subtitle1">{{ dt.manufacturer }} {{ dt.model }}</q-item-label>
@@ -42,10 +43,16 @@ import api from '../api';
 const deviceTypes = ref([]);
 const selected = ref(null);
 const showDialog = ref(false);
+const loading = ref(false);
 
 const loadTypes = async () => {
-  const { data } = await api.get('/device-types/');
-  deviceTypes.value = data;
+  loading.value = true;
+  try {
+    const { data } = await api.get('/device-types/');
+    deviceTypes.value = data;
+  } finally {
+    loading.value = false;
+  }
 };
 
 const select = (dt) => {

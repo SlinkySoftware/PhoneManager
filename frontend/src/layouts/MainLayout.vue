@@ -4,11 +4,11 @@
       <q-toolbar>
         <q-toolbar-title>Phone Provisioning Manager</q-toolbar-title>
         <q-tabs shrink stretch class="text-white">
-          <q-route-tab to="/device-types" label="Device Types" icon="schema" />
           <q-route-tab to="/devices" label="Devices" icon="devices" />
+          <q-route-tab to="/lines" label="Lines" icon="call" />
+          <q-route-tab to="/device-types" label="Device Types" icon="schema" />
           <q-route-tab to="/sip-servers" label="SIP Servers" icon="router" />
           <q-route-tab to="/sites" label="Sites" icon="business" />
-          <q-route-tab to="/lines" label="Lines" icon="call" />
         </q-tabs>
         <q-space />
         <div class="row items-center q-gutter-md q-pr-md">

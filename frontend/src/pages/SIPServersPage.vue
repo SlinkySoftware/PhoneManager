@@ -19,7 +19,7 @@
       <template #body-cell-actions="props">
         <q-td align="right">
           <q-btn dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
-          <q-btn dense flat icon="delete" color="negative" @click="remove(props.row)" />
+          <q-btn dense flat icon="delete" color="negative" @click="openDeleteConfirm(props.row)" />
         </q-td>
       </template>
     </q-table>
@@ -27,21 +27,69 @@
     <q-dialog v-model="dialog">
       <q-card style="min-width: 400px">
         <q-card-section class="text-h6">{{ form.id ? 'Edit' : 'Create' }} SIP Server</q-card-section>
+        <q-card-section v-if="errorMessage" class="bg-negative text-white q-mb-md">
+          <q-icon name="error" class="q-mr-md" />
+          {{ errorMessage }}
+        </q-card-section>
         <q-card-section class="q-gutter-md">
-          <q-input v-model="form.name" label="Name" dense outlined />
-          <q-input v-model="form.host" label="Host" dense outlined />
-          <q-input v-model.number="form.port" type="number" label="Port" dense outlined />
+          <q-input
+            v-model="form.name"
+            label="Name"
+            dense
+            outlined
+            :rules="[val => !!val || 'Name is required']"
+          />
+          <q-input
+            v-model="form.host"
+            label="Host"
+            dense
+            outlined
+            :rules="[
+              val => !!val || 'Host is required',
+              val => /^[a-zA-Z0-9.\-]+$/.test(val) || 'Invalid hostname format'
+            ]"
+          />
+          <q-input
+            v-model.number="form.port"
+            type="number"
+            label="Port"
+            dense
+            outlined
+            :rules="[
+              val => val !== null && val !== '' || 'Port is required',
+              val => val > 0 && val <= 65535 || 'Port must be between 1 and 65535'
+            ]"
+          />
           <q-select
             v-model="form.transport"
             :options="transports"
             label="Transport"
             dense
             outlined
+            :rules="[val => !!val || 'Transport is required']"
           />
         </q-card-section>
         <q-card-actions align="right">
           <q-btn flat label="Cancel" color="primary" v-close-popup />
           <q-btn unelevated color="primary" label="Save" @click="save" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <q-dialog v-model="deleteDialog">
+      <q-card style="min-width: 400px">
+        <q-card-section class="text-h6">Confirm Deletion</q-card-section>
+        <q-card-section>
+          <p>Are you sure you want to delete: <strong>{{ itemToDelete?.name }}</strong>?</p>
+          <p class="text-caption text-grey-7">This action cannot be undone.</p>
+        </q-card-section>
+        <q-card-section v-if="deleteError" class="bg-negative text-white">
+          <q-icon name="error" class="q-mr-md" />
+          {{ deleteError }}
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat label="Cancel" color="primary" v-close-popup />
+          <q-btn unelevated label="Delete" color="negative" @click="confirmDelete" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -55,6 +103,10 @@ import api from '../api';
 const servers = ref([]);
 const loading = ref(false);
 const dialog = ref(false);
+const errorMessage = ref('');
+const deleteDialog = ref(false);
+const itemToDelete = ref(null);
+const deleteError = ref('');
 const transports = ['TLS', 'UDP', 'TCP'];
 
 const emptyForm = () => ({ id: null, name: '', host: '', port: 5060, transport: 'UDP' });
@@ -68,6 +120,13 @@ const columns = [
   { name: 'actions', label: 'Actions', field: 'actions', align: 'right' }
 ];
 
+const extractErrorMessage = (error) => {
+  if (error.response?.data?.detail) return error.response.data.detail;
+  if (error.response?.data?.message) return error.response.data.message;
+  if (error.response?.statusText) return `Error: ${error.response.statusText}`;
+  return 'An unexpected error occurred. Please try again.';
+};
+
 const loadServers = async () => {
   loading.value = true;
   try {
@@ -80,28 +139,63 @@ const loadServers = async () => {
 
 const openCreate = () => {
   form.value = emptyForm();
+  errorMessage.value = '';
   dialog.value = true;
 };
 
 const openEdit = (row) => {
   form.value = { ...row };
+  errorMessage.value = '';
   dialog.value = true;
 };
 
 const save = async () => {
-  const payload = { ...form.value };
-  if (payload.id) {
-    await api.put(`/sip-servers/${payload.id}/`, payload);
-  } else {
-    await api.post('/sip-servers/', payload);
+  errorMessage.value = '';
+  if (!form.value.name || form.value.name.trim() === '') {
+    errorMessage.value = 'Name is required';
+    return;
   }
-  dialog.value = false;
-  await loadServers();
+  if (!form.value.host || form.value.host.trim() === '') {
+    errorMessage.value = 'Host is required';
+    return;
+  }
+  if (!form.value.port || form.value.port <= 0 || form.value.port > 65535) {
+    errorMessage.value = 'Port must be between 1 and 65535';
+    return;
+  }
+  if (!form.value.transport) {
+    errorMessage.value = 'Transport is required';
+    return;
+  }
+
+  try {
+    const payload = { ...form.value };
+    if (payload.id) {
+      await api.put(`/sip-servers/${payload.id}/`, payload);
+    } else {
+      await api.post('/sip-servers/', payload);
+    }
+    dialog.value = false;
+    await loadServers();
+  } catch (error) {
+    errorMessage.value = extractErrorMessage(error);
+  }
 };
 
-const remove = async (row) => {
-  await api.delete(`/sip-servers/${row.id}/`);
-  await loadServers();
+const openDeleteConfirm = (row) => {
+  itemToDelete.value = row;
+  deleteError.value = '';
+  deleteDialog.value = true;
+};
+
+const confirmDelete = async () => {
+  try {
+    await api.delete(`/sip-servers/${itemToDelete.value.id}/`);
+    deleteDialog.value = false;
+    await loadServers();
+  } catch (error) {
+    deleteError.value = extractErrorMessage(error);
+  }
 };
 
 onMounted(loadServers);

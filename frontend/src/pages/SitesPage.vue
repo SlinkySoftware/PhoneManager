@@ -25,7 +25,7 @@
       <template #body-cell-actions="props">
         <q-td align="right">
           <q-btn dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
-          <q-btn dense flat icon="delete" color="negative" @click="remove(props.row)" />
+          <q-btn dense flat icon="delete" color="negative" @click="openDeleteConfirm(props.row)" />
         </q-td>
       </template>
     </q-table>
@@ -33,8 +33,18 @@
     <q-dialog v-model="dialog">
       <q-card style="min-width: 520px">
         <q-card-section class="text-h6">{{ form.id ? 'Edit' : 'Create' }} Site</q-card-section>
+        <q-card-section v-if="errorMessage" class="bg-negative text-white q-mb-md">
+          <q-icon name="error" class="q-mr-md" />
+          {{ errorMessage }}
+        </q-card-section>
         <q-card-section class="q-gutter-md">
-          <q-input v-model="form.name" label="Name" dense outlined />
+          <q-input
+            v-model="form.name"
+            label="Name"
+            dense
+            outlined
+            :rules="[val => !!val || 'Name is required']"
+          />
           <q-select
             v-model="form.primary_sip_server"
             :options="serverOptions"
@@ -43,6 +53,7 @@
             outlined
             emit-value
             map-options
+            :rules="[val => val !== null || 'Primary SIP Server is required']"
           />
           <q-select
             v-model="form.secondary_sip_server"
@@ -61,6 +72,24 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <q-dialog v-model="deleteDialog">
+      <q-card style="min-width: 400px">
+        <q-card-section class="text-h6">Confirm Deletion</q-card-section>
+        <q-card-section>
+          <p>Are you sure you want to delete: <strong>{{ itemToDelete?.name }}</strong>?</p>
+          <p class="text-caption text-grey-7">This action cannot be undone.</p>
+        </q-card-section>
+        <q-card-section v-if="deleteError" class="bg-negative text-white">
+          <q-icon name="error" class="q-mr-md" />
+          {{ deleteError }}
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat label="Cancel" color="primary" v-close-popup />
+          <q-btn unelevated label="Delete" color="negative" @click="confirmDelete" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -72,6 +101,11 @@ const sites = ref([]);
 const sipServers = ref([]);
 const loading = ref(false);
 const dialog = ref(false);
+const formRef = ref(null);
+const errorMessage = ref('');
+const deleteDialog = ref(false);
+const itemToDelete = ref(null);
+const deleteError = ref('');
 
 const emptyForm = () => ({ id: null, name: '', primary_sip_server: null, secondary_sip_server: null });
 const form = ref(emptyForm());
@@ -95,6 +129,13 @@ const serverLabel = (id) => {
   return s ? `${s.name} (${s.host}:${s.port}/${s.transport})` : id;
 };
 
+const extractErrorMessage = (error) => {
+  if (error.response?.data?.detail) return error.response.data.detail;
+  if (error.response?.data?.message) return error.response.data.message;
+  if (error.response?.statusText) return `Error: ${error.response.statusText}`;
+  return 'An unexpected error occurred. Please try again.';
+};
+
 const loadSipServers = async () => {
   const { data } = await api.get('/sip-servers/');
   sipServers.value = data;
@@ -112,31 +153,58 @@ const loadSites = async () => {
 
 const openCreate = () => {
   form.value = emptyForm();
+  errorMessage.value = '';
   dialog.value = true;
 };
 
 const openEdit = (row) => {
   form.value = { ...row };
+  errorMessage.value = '';
   dialog.value = true;
 };
 
 const save = async () => {
-  const payload = { ...form.value };
-  if (!payload.secondary_sip_server) {
-    payload.secondary_sip_server = null;
+  errorMessage.value = '';
+  if (!form.value.name || form.value.name.trim() === '') {
+    errorMessage.value = 'Name is required';
+    return;
   }
-  if (payload.id) {
-    await api.put(`/sites/${payload.id}/`, payload);
-  } else {
-    await api.post('/sites/', payload);
+  if (form.value.primary_sip_server === null) {
+    errorMessage.value = 'Primary SIP Server is required';
+    return;
   }
-  dialog.value = false;
-  await loadSites();
+
+  try {
+    const payload = { ...form.value };
+    if (!payload.secondary_sip_server) {
+      payload.secondary_sip_server = null;
+    }
+    if (payload.id) {
+      await api.put(`/sites/${payload.id}/`, payload);
+    } else {
+      await api.post('/sites/', payload);
+    }
+    dialog.value = false;
+    await loadSites();
+  } catch (error) {
+    errorMessage.value = extractErrorMessage(error);
+  }
 };
 
-const remove = async (row) => {
-  await api.delete(`/sites/${row.id}/`);
-  await loadSites();
+const openDeleteConfirm = (row) => {
+  itemToDelete.value = row;
+  deleteError.value = '';
+  deleteDialog.value = true;
+};
+
+const confirmDelete = async () => {
+  try {
+    await api.delete(`/sites/${itemToDelete.value.id}/`);
+    deleteDialog.value = false;
+    await loadSites();
+  } catch (error) {
+    deleteError.value = extractErrorMessage(error);
+  }
 };
 
 onMounted(async () => {
