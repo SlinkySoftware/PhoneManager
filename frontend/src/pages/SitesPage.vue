@@ -132,8 +132,18 @@ const serverLabel = (id) => {
 const extractErrorMessage = (error) => {
   if (error.response?.data?.detail) return error.response.data.detail;
   if (error.response?.data?.message) return error.response.data.message;
-  if (error.response?.statusText) return `Error: ${error.response.statusText}`;
-  return 'An unexpected error occurred. Please try again.';
+  
+  if (error.response?.status === 409) {
+    return 'Cannot complete this operation: The item is currently in use by other records. Please remove dependencies first.';
+  }
+  if (error.response?.status === 404) return 'The requested item was not found. It may have been deleted.';
+  if (error.response?.status === 403) return 'You do not have permission to perform this action.';
+  if (error.response?.status === 401) return 'Your session has expired. Please log in again.';
+  
+  if (error.response?.statusText) return `Operation failed: ${error.response.statusText}`;
+  if (error.request) return 'Network error: Unable to reach the server. Please check your connection.';
+  
+  return 'An unexpected error occurred. Please try again or contact support if the problem persists.';
 };
 
 const loadSipServers = async () => {

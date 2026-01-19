@@ -143,8 +143,51 @@ onMounted(async () => {
 - Use Django REST Framework ViewSets
 - Authenticated endpoints require `permission_classes = [IsAuthenticated]`
 - Use `@action` decorator for custom endpoints
-- Return appropriate HTTP status codes (200, 201, 400, 404, 500)
+- Return appropriate HTTP status codes (200, 201, 400, 404, 409, 500)
 - Optimize queries with `select_related()`, `prefetch_related()`
+- **Override `destroy()` method** to handle foreign key constraint violations gracefully
+
+#### Error Handling in Views
+All ViewSets should override the `destroy()` method to catch and handle database constraint violations:
+
+```python
+from django.db.models import ProtectedError
+from django.db import IntegrityError
+
+def destroy(self, request, *args, **kwargs):
+    """Handle delete with foreign key constraint checking."""
+    instance = self.get_object()
+    try:
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    except ProtectedError as e:
+        protected_objects = e.protected_objects
+        count = len(protected_objects)
+        return Response(
+            {
+                'detail': f'Cannot delete this {ModelName} as it is currently used by {count} related record(s). '
+                          'Please reassign or delete those records first.',
+                'error_code': 'foreign_key_constraint'
+            },
+            status=status.HTTP_409_CONFLICT
+        )
+    except IntegrityError as e:
+        return Response(
+            {
+                'detail': 'Cannot delete this item due to database constraints. '
+                          'It may be referenced by other records.',
+                'error_code': 'integrity_error'
+            },
+            status=status.HTTP_409_CONFLICT
+        )
+```
+
+**Key Points:**
+- Use **HTTP 409 Conflict** for constraint violations (not 500)
+- Always include a `detail` field with user-friendly message explaining WHY the operation failed
+- Count and mention the number of related objects when possible
+- Include an `error_code` for frontend categorization
+- Messages should guide users toward resolution (e.g., "delete those records first")
 
 ### Provisioning Endpoints (phoneprov/provisioning/)
 - **MUST be unauthenticated** (phones don't have credentials)

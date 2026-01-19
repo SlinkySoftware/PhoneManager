@@ -3,6 +3,70 @@
 ## Overview
 Comprehensive validation, error handling, and delete confirmation patterns have been implemented across all frontend data pages following the standards defined in FRONTEND_GUIDELINES.md.
 
+## Recent Improvements (2026-01-20)
+
+### Backend Error Handling
+**Problem:** Users were seeing generic "Error: Internal Server Error" messages when attempting to delete items with foreign key constraints, providing no guidance on why the operation failed.
+
+**Solution:** Implemented comprehensive error handling in Django backend viewsets:
+
+#### Changes Made:
+1. **Added imports** to `backend/core/views.py`:
+   - `ProtectedError` from `django.db.models`
+   - `IntegrityError` from `django.db`
+
+2. **Override `destroy()` method** in all ViewSets:
+   - `SIPServerViewSet` - detects when server is used by sites
+   - `SiteViewSet` - detects when site has devices assigned
+   - `LineViewSet` - detects when line is assigned to devices
+   - `DeviceViewSet` - detects when device has related records
+
+3. **Error Response Format**:
+   ```json
+   {
+     "detail": "Cannot delete this SIP Server as it is currently used by 3 site(s). Please reassign or delete those sites first.",
+     "error_code": "foreign_key_constraint"
+   }
+   ```
+
+4. **HTTP Status Codes**:
+   - `409 Conflict` - for foreign key constraint violations
+   - `204 No Content` - for successful deletions
+   - Generic `IntegrityError` also returns 409
+
+### Frontend Error Handling
+**Enhanced `extractErrorMessage()` helper function** in all pages:
+
+#### Improvements:
+- **Prioritizes backend messages**: Checks `error.response.data.detail` first
+- **Status-specific messages**: Provides context for common HTTP codes:
+  - `409`: Foreign key constraint message from backend
+  - `404`: "Item not found. It may have been deleted."
+  - `403`: "You do not have permission..."
+  - `401`: "Your session has expired..."
+- **Network error handling**: Separate message for connection failures
+- **Improved fallback messages**: More helpful than generic errors
+
+#### Updated Files:
+- `/frontend/src/pages/SIPServersPage.vue`
+- `/frontend/src/pages/SitesPage.vue`
+- `/frontend/src/pages/LinesPage.vue`
+- `/frontend/src/pages/DevicesPage.vue`
+
+### Documentation Updates
+
+#### FRONTEND_GUIDELINES.md
+- Expanded error handling section with full extractErrorMessage implementation
+- Added HTTP status code handling examples
+- Documented backend error response format
+- Clarified delete confirmation dialog behavior (stays open on error)
+
+#### COPILOT_GUIDELINES.md
+- Added comprehensive "Error Handling in Views" section
+- Documented the destroy() method override pattern
+- Specified HTTP 409 for constraint violations (not 500)
+- Emphasized user-friendly error messages with guidance
+
 ## Implementation Status
 
 ### ✅ SitesPage.vue

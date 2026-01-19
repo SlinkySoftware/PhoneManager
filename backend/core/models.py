@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Slinky Software
+
 """Core data models for Phone Provisioning Manager.
 
 These models mirror the frontend-oriented structure described in the build prompt.
