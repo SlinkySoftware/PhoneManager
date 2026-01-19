@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 BACKEND_DIR="$PROJECT_ROOT/backend"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
+DJANGO_DEBUG="true"
 
 # Directories
 VAR_DIR="$PROJECT_ROOT/var"
@@ -101,6 +102,7 @@ start_backend() {
     # Activate venv and start backend
     cd "$BACKEND_DIR"
     source .venv/bin/activate
+    export DJANGO_DEBUG
     
     # Start Django development server
     python manage.py runserver 0.0.0.0:8000 >> "$BACKEND_LOG" 2>&1 &
