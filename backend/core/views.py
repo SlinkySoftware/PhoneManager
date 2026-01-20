@@ -9,6 +9,7 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.decorators import action
 
 from .models import Device, DeviceTypeConfig, Line, SIPServer, Site
 from .serializers import DeviceSerializer, DeviceTypeConfigSerializer, LineSerializer, SIPServerSerializer, SiteSerializer
@@ -200,6 +201,79 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
 
 class DeviceTypeConfigViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing device type configurations.
+    
+    Supports custom endpoints for getting/saving config by type_id:
+    - GET /device-type-config/{type_id}/ - Get config for a type
+    - PUT /device-type-config/{type_id}/ - Create/update config for a type
+    """
     queryset = DeviceTypeConfig.objects.all()
     serializer_class = DeviceTypeConfigSerializer
     permission_classes = [AdminOrReadOnly]
+    lookup_field = 'type_id'
+
+    def get_object(self):
+        """Allow lookup by type_id in URL."""
+        type_id = self.kwargs.get('type_id') or self.kwargs.get('pk')
+        if not type_id:
+            from rest_framework.exceptions import NotFound
+            raise NotFound("type_id is required in the URL path")
+        try:
+            return DeviceTypeConfig.objects.get(type_id=type_id)
+        except DeviceTypeConfig.DoesNotExist:
+            # Return 404 if not found
+            from rest_framework.exceptions import NotFound
+            raise NotFound(f"No configuration found for device type: {type_id}")
+
+    def retrieve(self, request, *args, **kwargs):
+        """Handle GET request for a specific type_id."""
+        return super().retrieve(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        """Handle PUT/PATCH requests.
+        
+        Extracts saved_values from request and updates the configuration.
+        """
+        type_id = kwargs.get('type_id') or kwargs.get('pk')
+        if not type_id:
+            return Response(
+                {'detail': 'type_id is required in the URL path'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            instance = DeviceTypeConfig.objects.get(type_id=type_id)
+            saved_values = request.data.get('saved_values', {})
+            
+            # Update common_options with new schema if provided
+            if 'common_options' in request.data:
+                instance.common_options = request.data.get('common_options', {})
+            
+            # Store saved values
+            if saved_values:
+                instance.common_options['_saved_values'] = saved_values
+            
+            instance.save()
+            serializer = self.get_serializer(instance)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except DeviceTypeConfig.DoesNotExist:
+            # Create new record
+            common_options = request.data.get('common_options', {})
+            saved_values = request.data.get('saved_values', {})
+            
+            instance = DeviceTypeConfig.objects.create(
+                type_id=type_id,
+                common_options=common_options
+            )
+            
+            # Store saved values
+            if saved_values:
+                instance.common_options['_saved_values'] = saved_values
+                instance.save()
+            
+            serializer = self.get_serializer(instance)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def create(self, request, *args, **kwargs):
+        """Handle POST requests to create new configuration."""
+        return super().create(request, *args, **kwargs)

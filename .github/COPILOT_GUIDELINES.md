@@ -201,6 +201,41 @@ def destroy(self, request, *args, **kwargs):
 - Renderers MUST be deterministic (same input = same output)
 - Configuration generated from database only, no external files
 - Register new renderers in `RendererFactory.RENDERERS`
+- Each renderer defines `CommonOptions` schema describing UI fields for that device type
+
+#### CommonOptions JSON Schema
+
+Device types expose configuration options through a JSON schema that describes how to render UI controls:
+
+```python
+EXAMPLE_COMMON_OPTIONS = {
+    "sections": [
+        {
+            "friendlyName": "SIP Registration",      # Display name for section
+            "uiOrder": 1,                             # Sort order (ascending)
+            "options": [
+                {
+                    "optionId": "outbound_proxy",    # Database key (stored in saved_values)
+                    "friendlyName": "Outbound Proxy", # UI label
+                    "default": "",                    # Default value
+                    "mandatory": False,               # Required field
+                    "type": "text",                   # Input type: text, number, select, textarea, checkbox
+                    "uiOrder": 1,                     # Sort order within section
+                    "options": []                     # For select type: available choices
+                }
+            ]
+        }
+    ]
+}
+```
+
+**Frontend Implementation:**
+- Parse `commonOptions` schema and render dynamic forms
+- Group options by section
+- Sort sections and options by `uiOrder`
+- Support input types: `text`, `number`, `select`, `textarea`, `checkbox`
+- Store user-entered values in `DeviceTypeConfig.common_options['_saved_values']`
+- Values are accessible to renderers via `device.device_specific_configuration`
 
 **Adding a New Renderer:**
 ```python
@@ -213,15 +248,34 @@ from phoneprov.api.models import Device
 class CiscoRenderer(BaseRenderer):
     """Configuration renderer for Cisco SIP devices."""
     
+    # Define configuration UI schema
+    CommonOptions = {
+        "sections": [
+            {
+                "friendlyName": "SIP Profile 1",
+                "uiOrder": 1,
+                "options": [
+                    {
+                        "optionId": "sip_server_1",
+                        "friendlyName": "SIP Server",
+                        "default": "",
+                        "mandatory": True,
+                        "type": "text",
+                        "uiOrder": 1
+                    }
+                ]
+            }
+        ]
+    }
+    
     def render(self, device: Device) -> str:
         self._reset()
         self._add_comment(f"Config for {device.friendly_name}")
         
-        # Add device-specific configuration
-        for line in device.lines.filter(is_enabled=True):
-            self._add_line(f"line_{line.line_index}_name", line.display_name)
-            # ... more config
+        # Get user-configured options
+        sip_server = device.device_specific_configuration.get("sip_server_1", "")
         
+        # ... generate config
         return self.config
 ```
 
@@ -419,6 +473,9 @@ cd backend && source .venv/bin/activate && python manage.py migrate
 - [docs/API.md](../docs/API.md) - REST API reference
 - [docs/INSTALLATION.md](../docs/INSTALLATION.md) - Setup instructions
 - [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) - Production deployment guide
+- [docs/FRONTEND_GUIDELINES.md](../docs/FRONTEND_GUIDELINES.md) - Frontend validation, error handling, and UI patterns
+- [docs/DEVICE_TYPE_OPTIONS.md](../docs/DEVICE_TYPE_OPTIONS.md) - Device type configuration schema and rendering
+- [docs/DEVICE_TYPE_OPTIONS_QUICK_REF.md](../docs/DEVICE_TYPE_OPTIONS_QUICK_REF.md) - Quick reference for device type options
 - [CONTRIBUTING.md](../CONTRIBUTING.md) - Contribution guidelines
 - [README.md](../README.md) - Project overview
 
