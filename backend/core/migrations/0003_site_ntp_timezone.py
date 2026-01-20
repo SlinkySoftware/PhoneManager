@@ -497,7 +497,6 @@ class Migration(migrations.Migration):
                     ("Pacific/Rarotonga", "Pacific/Rarotonga"),
                     ("Pacific/Saipan", "Pacific/Saipan"),
                     ("Pacific/Samoa", "Pacific/Samoa"),
-                    ("Pacific/Samoa", "Pacific/Samoa"),
                     ("Pacific/Tahiti", "Pacific/Tahiti"),
                     ("Pacific/Tarawa", "Pacific/Tarawa"),
                     ("Pacific/Tongatapu", "Pacific/Tongatapu"),
