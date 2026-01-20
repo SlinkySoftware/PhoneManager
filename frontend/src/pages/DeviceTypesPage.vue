@@ -211,7 +211,9 @@
         </q-card-section>
 
         <!-- Actions -->
-        <q-card-actions align="right" class="q-pa-md">
+        <q-card-actions class="q-pa-md">
+          <q-btn flat label="Reset to Defaults" color="warning" @click="confirmReset" />
+          <q-space />
           <q-btn flat label="Cancel" color="primary" v-close-popup />
           <q-btn
             unelevated
@@ -220,6 +222,23 @@
             @click="saveOptions"
             :loading="savingOptions"
           />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
+    <!-- Reset Confirmation Dialog -->
+    <q-dialog v-model="showResetConfirm">
+      <q-card style="min-width: 400px" class="bg-grey-9">
+        <q-card-section class="bg-warning text-white">
+          <div class="text-h6">Reset to Defaults?</div>
+        </q-card-section>
+        <q-card-section class="text-white">
+          <p>Are you sure you want to reset all options to their default values?</p>
+          <p class="text-caption text-grey-5">This will overwrite all changes you've made.</p>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat label="Cancel" color="primary" v-close-popup />
+          <q-btn unelevated label="Reset" color="warning" @click="performReset" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -233,6 +252,7 @@ import api from '../api';
 const deviceTypes = ref([]);
 const selectedType = ref(null);
 const showOptionsDialog = ref(false);
+const showResetConfirm = ref(false);
 const loading = ref(false);
 const savingOptions = ref(false);
 const optionsError = ref('');
@@ -303,6 +323,28 @@ const saveOptions = async () => {
                         'Failed to save options. Please try again.';
   } finally {
     savingOptions.value = false;
+  }
+};
+
+/**
+ * Show the reset confirmation dialog.
+ */
+const confirmReset = () => {
+  showResetConfirm.value = true;
+};
+
+/**
+ * Reset all options to their default values from the schema.
+ */
+const performReset = () => {
+  showResetConfirm.value = false;
+  if (selectedType.value?.commonOptions?.sections) {
+    selectedType.value.commonOptions.sections.forEach(section => {
+      section.options?.forEach(option => {
+        const defaultValue = option.default ?? (option.type === 'orderedmultiselect' ? [] : '');
+        optionValues.value[option.optionId] = defaultValue;
+      });
+    });
   }
 };
 
