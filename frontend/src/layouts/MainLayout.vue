@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later
+     Copyright (c) 2026 Slinky Software -->
 <template>
   <q-layout view="hHh lpR fFf">
     <q-header v-if="!isLoginPage" elevated>

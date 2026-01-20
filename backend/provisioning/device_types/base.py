@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Slinky Software
+
 """Base device type renderer contract."""
 from __future__ import annotations
 from dataclasses import dataclass

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later
+     Copyright (c) 2026 Slinky Software -->
 <template>
   <q-page class="q-pa-md">
     <div class="text-h5 q-mb-md">Device Types</div>

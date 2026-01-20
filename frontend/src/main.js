@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (c) 2026 Slinky Software
+ */
+
 import { createApp } from 'vue';
 import { Quasar } from 'quasar';
 import { createPinia } from 'pinia';

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Slinky Software
+
 """Serializers for core models."""
 from django.db.models import Q
 from rest_framework import serializers

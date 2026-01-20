@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (c) 2026 Slinky Software
+ */
+
 import { defineStore } from 'pinia';
 
 const STORAGE_KEY_TOKEN = 'auth_token';

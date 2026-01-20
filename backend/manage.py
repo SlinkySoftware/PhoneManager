@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Slinky Software
+
 """Django management utility for Phone Provisioning Manager."""
 import os
 import sys

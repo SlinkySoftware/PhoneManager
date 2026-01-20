@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Slinky Software
+
 """Grandstream HT812 ATA device type renderer.
 
 This implementation exposes a small, focused set of options and renders

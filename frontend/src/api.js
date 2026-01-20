@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (c) 2026 Slinky Software
+ */
+
 import axios from 'axios';
 import { useAuthStore } from './stores/auth';
 import { useRouter } from 'vue-router';

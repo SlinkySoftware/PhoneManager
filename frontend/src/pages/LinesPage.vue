@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later
+     Copyright (c) 2026 Slinky Software -->
 <template>
   <q-page class="q-pa-md">
     <div class="row items-center q-mb-md">

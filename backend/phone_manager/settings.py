@@ -1,6 +1,6 @@
 """Django settings for Phone Provisioning Manager.
 
-Copyright 2026 Slinky Software. GPL-3.0-only.
+Copyright 2026 Slinky Software. GPL-3.0-or-later
 """
 from pathlib import Path
 import os

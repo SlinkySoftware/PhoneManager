@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Slinky Software
+
 """URL configuration for Phone Provisioning Manager."""
 from django.contrib import admin
 from django.urls import include, path

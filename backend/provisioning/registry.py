@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Slinky Software
+
 """In-memory registry for device type renderers."""
 from typing import Dict, List, Type
 

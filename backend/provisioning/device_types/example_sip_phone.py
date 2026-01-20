@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Slinky Software
+
 """Example device type renderer showing schema-driven options."""
 from __future__ import annotations
 from textwrap import dedent

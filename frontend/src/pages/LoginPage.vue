@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later
+     Copyright (c) 2026 Slinky Software -->
 <template>
   <div class="login-page flex flex-center">
     <q-card style="width: 100%; max-width: 400px" class="bg-grey-9 text-white">
