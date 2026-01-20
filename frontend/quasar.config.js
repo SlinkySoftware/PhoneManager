@@ -9,7 +9,8 @@ export default function () {
         brand: {
           primary: '#0fa36b',
           secondary: '#0b6e4f',
-          accent: '#8af3c4'
+          accent: '#8af3c4',
+          negative: '#ef5030'
         }
       },
       lang: 'en-US',
