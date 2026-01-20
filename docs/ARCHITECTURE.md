@@ -1,34 +1,272 @@
 # Phone Provisioning Manager Architecture
 
-## Overview
-- Backend: Django + DRF, stateless, PostgreSQL preferred (SQLite for dev)
-- Frontend: Quasar (Vue 3) SPA, dark mode + green theme
-- Provisioning: HTTP endpoints keyed by MAC address returning deterministic config
-- Deployment: Bare metal or Docker Compose (frontend + backend + Postgres)
+## System Overview
 
-## Data Model (Backend)
-- Device (MAC, description, device_type_id, site, primary line, extra lines M2M, device_specific_configuration JSON, enabled)
-- DeviceTypeConfig (type_id, common_options JSON)
-- Line (name, directory_number, registration_account, registration_password, is_shared)
-- Site (name, primary_sip_server, secondary_sip_server)
-- SIPServer (name, host, port, transport)
+The Phone Provisioning Manager is a high-availability system for managing and provisioning SIP devices. It follows a stateless, horizontally-scalable architecture with clear separation between configuration management (admin API) and device provisioning (phone endpoints).
 
-## Device Type Rendering
-- Each renderer is a Python class exposing TypeID, Manufacturer, Model, NumberOfLines, CommonOptions, DeviceSpecificOptions, render()
-- Registry lives in backend/provisioning/registry.py
-- Example renderer: ExampleSIPPhone
+### Core Principles
+1. **Stateless Backend**: No local file storage; all state persists in database
+2. **Deterministic Rendering**: Same configuration produces same output every time
+3. **Horizontal Scaling**: Multiple backend instances work independently behind a load balancer
+4. **Single Source of Truth**: PostgreSQL/SQLite database holds all configuration
+5. **Security**: Provisioning endpoints are unauthenticated (phones use MAC addresses), admin endpoints require JWT tokens
 
-## API Surface
-- CRUD: devices, lines, sites, sip-servers
-- Device types: list renderers; read/write common options via type_id
-- Provisioning: GET /provision/<MAC> returns text config
+## Technology Stack
 
-## Frontend (Planned)
-- Quasar SPA with Pinia store for auth/session
-- Axios for API calls
-- Dynamic forms driven by options JSON (sections/options ordered by uiOrder)
+### Backend
+- **Framework**: Django 6.0.1 + Django REST Framework 3.15+
+- **Database**: PostgreSQL 17 (production) / SQLite 3 (development)
+- **Authentication**: Token-based JWT
+- **Python**: 3.10+
+- **Key Libraries**: pytz (timezone support), Pillow (image handling)
 
-## Deployment
-- Environment-driven configuration via .env files (backend/.env, docker/.env)
-- Docker Compose includes backend, frontend, postgres
-- GPLv3 licensed; ensure headers and docs reference licensing
+### Frontend
+- **Framework**: Vue 3 with Quasar v2.18
+- **State Management**: Pinia
+- **HTTP Client**: Axios
+- **Build Tool**: Vite
+- **Node**: 18+
+
+### Infrastructure
+- **Containerization**: Docker Compose
+- **Process Management**: Shell scripts for development, systemd for production
+- **Logging**: File-based (var/logs/)
+
+## Data Model
+
+```
+Device
+├── mac_address (unique, case-insensitive)
+├── friendly_name
+├── site (FK → Site)
+├── line_1 (FK → Line, primary)
+├── lines (M2M → Line, includes line_1)
+├── device_specific_configuration (JSON)
+├── enabled (boolean)
+└── timestamps (created, updated)
+
+Site
+├── name (unique)
+├── primary_sip_server (FK → SIPServer)
+├── secondary_sip_server (FK → SIPServer, optional)
+├── timezone (CharField, pytz choice)
+├── primary_ntp_ip (GenericIPAddressField, optional)
+├── secondary_ntp_ip (GenericIPAddressField, optional)
+└── timestamps (created, updated)
+
+Line
+├── name
+├── directory_number (unique)
+├── registration_account
+├── registration_password
+├── is_shared (boolean)
+└── timestamps (created, updated)
+
+SIPServer
+├── name (unique)
+├── host (hostname/IP)
+├── port (default 5060)
+├── transport (TCP/UDP/TLS)
+└── timestamps (created, updated)
+
+DeviceTypeConfig
+├── type_id (unique, device type identifier)
+├── common_options (JSON schema + saved values)
+└── timestamps (created, updated)
+```
+
+## API Architecture
+
+### REST API Endpoints
+
+**Authentication** (Public)
+- `POST /api/auth/login/` - Exchange credentials for JWT token
+
+**Admin APIs** (Requires Authentication)
+- `GET/POST /api/devices/` - List/create devices
+- `GET/PUT/DELETE /api/devices/{id}/` - Retrieve/update/delete device
+- `GET/POST /api/lines/` - Manage phone lines
+- `GET/POST /api/sites/` - Manage sites
+- `GET/POST /api/sip-servers/` - Manage SIP servers
+- `GET/PUT /api/device-type-config/{type_id}/` - Manage device type configurations
+
+**Provisioning Endpoints** (Public, unauthenticated)
+- `GET /provision/<MAC>` - Returns device configuration file
+- `GET /api/device-types/` - List available device types with options
+
+**Utility Endpoints** (Public)
+- `GET /api/timezones/` - List all timezones with UTC offsets
+
+### Device Rendering Pipeline
+
+1. **Device Request**: Phone requests config with MAC address
+2. **Lookup**: Backend finds device by MAC in database
+3. **Validation**: Check if device is enabled and assigned to site
+4. **Renderer Selection**: Look up device type and load renderer class
+5. **Configuration Generation**:
+   - Load site configuration (SIP servers, NTP servers, timezone)
+   - Load device-specific configuration (user-entered options)
+   - Load assigned lines
+   - Call renderer's `render()` method with all data
+6. **Response**: Return deterministically-generated configuration file
+
+### Device Type System
+
+Device types are Python classes implementing a common interface:
+
+```python
+class DeviceType:
+    TypeID = "VendorModel"           # Unique identifier
+    Manufacturer = "Vendor"           # Display name
+    Model = "Model X"                 # Display model
+    NumberOfLines = 4                 # Max concurrent calls
+    
+    CommonOptions = {                 # User-configurable options
+        "sections": [
+            {
+                "friendlyName": "SIP Settings",
+                "uiOrder": 1,
+                "options": [
+                    {
+                        "optionId": "sip_server",
+                        "friendlyName": "SIP Server",
+                        "default": "",
+                        "mandatory": True,
+                        "type": "text",
+                        "uiOrder": 1
+                    }
+                ]
+            }
+        ]
+    }
+    
+    def render(self, device: Device) -> str:
+        """Generate configuration file content."""
+        config = ""
+        # Build device config using device properties
+        return config
+```
+
+## Authentication & Authorization
+
+### Token-Based Authentication
+1. User POSTs username/password to `/api/auth/login/`
+2. Server validates credentials and returns JWT token
+3. Client includes token in `Authorization: Token <token>` header
+4. Protected endpoints verify token and check permissions
+
+### Permission Levels
+- **AllowAny**: Provisioning endpoints, login, timezone list
+- **Authenticated**: Read access to all admin APIs
+- **AdminOrReadOnly**: Write access requires staff status
+- **ProtectedError Handling**: Foreign key violations return 409 Conflict
+
+## Frontend Architecture
+
+### Page Structure
+- **Pages**: Route components (Devices, Lines, Sites, Device Types)
+- **Components**: Reusable UI elements (tables, dialogs, forms)
+- **Stores**: Pinia stores for auth state and session
+- **Services**: API client modules with Axios
+
+### Form Patterns
+- Real-time validation with error messages
+- Change detection to prevent unintended data loss
+- Confirmation dialogs for destructive operations
+- Proper error extraction and display
+- Loading states during async operations
+
+### State Management
+- **Auth Store**: JWT token, user info, login/logout
+- **Session**: localStorage persistence of token
+- **Data**: Fetch on-demand (no duplication in stores)
+
+## Deployment Architecture
+
+### Development
+- `manage-services.sh` script starts both services
+- Django runserver for backend
+- Vite dev server for frontend
+- SQLite database for simplicity
+
+### Docker Compose
+- Three containers: backend, frontend, PostgreSQL
+- Environment-driven configuration
+- Volume mounts for data persistence
+- Network bridge for service communication
+
+### Production (Bare Metal)
+- systemd service for backend (gunicorn + PostgreSQL)
+- systemd service for frontend (Node.js or served by nginx)
+- Load balancer (nginx/HAProxy) terminating TLS
+- Separate database server with backups
+- Log aggregation from var/logs/
+
+## Security Considerations
+
+### Provisioning Endpoint Security
+- **Intentionally unauthenticated**: Phones cannot handle OAuth
+- **MAC-based identification**: Device identified by MAC address
+- **Logging**: All provisioning requests logged to ProvisioningLog
+- **Rate limiting**: Recommended at load balancer level
+- **Error masking**: Generic 404/403 to prevent info leakage
+
+### Admin API Security
+- **Token authentication**: Required for all write operations
+- **CORS whitelist**: Only frontend origin allowed
+- **HTTPS required**: Use TLS termination at load balancer
+- **Password hashing**: Django's PBKDF2 hasher for auth
+- **Environment variables**: Secrets in .env, never committed
+
+## High Availability
+
+### Stateless Design Enables:
+- Add/remove backend instances without coordination
+- Load balancer can route requests to any instance
+- Database is single point of consistency (not availability)
+- Caching feasible since config is deterministic
+
+### Scaling Considerations
+- **Vertical**: Increase server resources
+- **Horizontal**: Add backend instances behind load balancer
+- **Database**: PostgreSQL replication for HA
+- **Caching**: Frontend caching of device configs possible
+- **CDN**: Configuration files could be served from CDN
+
+## Extensibility
+
+### Adding Device Types
+1. Create renderer class in `backend/provisioning/device_types/`
+2. Define `CommonOptions` schema for configuration UI
+3. Implement `render()` method
+4. Register in `RendererFactory.RENDERERS` dict
+5. UI automatically generates configuration forms
+
+### Adding API Endpoints
+1. Create/update model in `backend/core/models.py`
+2. Create serializer in `backend/core/serializers.py`
+3. Create viewset in `backend/core/views.py`
+4. Register in router in `backend/phone_manager/urls.py`
+5. Frontend service calls and UI automatically work
+
+## Monitoring & Logging
+
+### Backend Logging
+- All requests logged to var/logs/backend.log
+- Provisioning requests logged with MAC, IP, outcome
+- Failed authentication/authorization logged
+- Database errors logged with context
+
+### Frontend Logging
+- Browser console errors captured
+- API errors displayed to user
+- Service worker logs for offline capability (future)
+
+## Documentation Structure
+
+- **ARCHITECTURE.md**: This file - system design and flow
+- **AUTHENTICATION.md**: Login flow and JWT token management
+- **DEPLOYMENT.md**: Production deployment checklist
+- **FRONTEND_GUIDELINES.md**: UI development patterns
+- **DEVICE_TYPE_OPTIONS.md**: Configuration schema system
+- **.github/copilot-instructions.md**: Development standards

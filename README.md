@@ -10,50 +10,96 @@ High-availability phone provisioning and configuration management system by Slin
 
 ## Quick Start (Development)
 
-### Backend Setup
-```bash
-cd backend
+### Initial Setup (One-Time)
 
-# Create and activate virtual environment
+```bash
+# Backend initialization
+cd backend
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies and migrate
 pip install -r requirements.txt
 cp .env.example .env
 python manage.py migrate
 python manage.py createsuperuser  # Create admin user
+cd ..
 
-# Start backend server
+# Frontend initialization
+cd frontend
+npm install
+cd ..
+```
+
+### Start Services
+
+Use the service management script to start/stop both backend and frontend:
+
+```bash
+# Start all services
+./manage-services.sh start
+
+# Check service status
+./manage-services.sh status
+
+# Stop all services
+./manage-services.sh stop
+
+# Restart all services
+./manage-services.sh restart
+```
+
+**Service Locations:**
+- Backend API: http://localhost:8000/api
+- Frontend UI: http://localhost:5173
+- Admin Panel: http://localhost:8000/admin
+- Backend Logs: `var/logs/backend.log`
+- Frontend Logs: `var/logs/frontend.log`
+
+### Manual Service Control (if needed)
+
+**Backend only:**
+```bash
+cd backend
+source .venv/bin/activate
+python manage.py migrate  # Run migrations if needed
 python manage.py runserver 0.0.0.0:8000
 ```
 
-**Important:** Always activate the venv with `source .venv/bin/activate` before running any `python` or `pip` commands in the backend directory.
-
-### Frontend Setup
+**Frontend only:**
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
 
 ### Docker Setup (All Services)
+
 ```bash
 cd docker
 cp .env.example .env
 docker compose up --build
 ```
 
-## Key Features (scaffolded)
-- REST APIs for devices, lines, sites, SIP servers
-- Provisioning endpoints keyed by MAC address
-- Device type renderer framework with example implementation
-- Quasar SPA with dark mode + green theme
+Backend API will be available at http://localhost:8000/api
 
-## Next Steps
-- Implement remaining serializers, viewsets, and provisioning renderers
-- Hook frontend forms to backend schemas and endpoints
-- Harden auth (session/token), RBAC, and logging
+## Key Features
+
+- **Device Management**: CRUD operations for SIP devices with flexible provisioning
+- **Site & Line Management**: Organize devices into sites with multi-line support
+- **REST APIs**: Comprehensive REST endpoints for all resources
+- **Provisioning**: Deterministic configuration generation keyed by MAC address
+- **Device Types**: Pluggable renderer framework with configurable options
+- **Authentication**: Token-based authentication with admin roles
+- **Web UI**: Quasar SPA with dark mode and intuitive forms
+- **Error Handling**: Comprehensive validation and user-friendly error messages
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) - System design and data model
+- [Authentication](docs/AUTHENTICATION.md) - Login and token management
+- [Deployment](docs/DEPLOYMENT.md) - Production deployment guide
+- [Frontend Guidelines](docs/FRONTEND_GUIDELINES.md) - UI development standards
+- [Device Type Options](docs/DEVICE_TYPE_OPTIONS.md) - Configuration schema system
+- [Copilot Guidelines](.github/copilot-instructions.md) - AI coding standards
 
 ## License
-GPL-3.0-only. See LICENSE.md for full text.
+
+GPL-3.0-or-later. See LICENSE.md for full text.
