@@ -6,7 +6,7 @@ from rest_framework import permissions, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from core.models import Device, DeviceTypeConfig
+from core.models import Device, DeviceTypeConfig, normalize_mac
 from core.serializers import DeviceTypeConfigSerializer
 from .registry import get_device_type, list_device_types
 
@@ -48,7 +48,7 @@ class ProvisioningViewSet(viewsets.ViewSet):
     permission_classes = [permissions.AllowAny]
 
     def retrieve(self, request, pk=None):
-        mac = pk
+        mac = normalize_mac(pk)
         try:
             device = Device.objects.select_related("line_1", "site__primary_sip_server", "site__secondary_sip_server").get(
                 mac_address__iexact=mac

@@ -65,6 +65,41 @@
             map-options
             clearable
           />
+          <q-select
+            v-model="form.timezone"
+            :options="timezoneOptions"
+            label="Timezone"
+            dense
+            outlined
+            emit-value
+            map-options
+            clearable
+            use-input
+            fill-input
+            hide-selected
+            :rules="[val => !!val || 'Timezone is required']"
+            @filter="filterTimezones"
+          />
+          <q-input
+            v-model="form.primary_ntp_ip"
+            label="Primary NTP IP (optional)"
+            type="text"
+            dense
+            outlined
+            :rules="[
+              val => !val || /^(\d{1,3}\.){3}\d{1,3}$/.test(val) || 'Invalid IP address'
+            ]"
+          />
+          <q-input
+            v-model="form.secondary_ntp_ip"
+            label="Secondary NTP IP (optional)"
+            type="text"
+            dense
+            outlined
+            :rules="[
+              val => !val || /^(\d{1,3}\.){3}\d{1,3}$/.test(val) || 'Invalid IP address'
+            ]"
+          />
         </q-card-section>
         <q-card-actions align="right">
           <q-btn flat label="Cancel" color="primary" v-close-popup />
@@ -97,6 +132,9 @@
 import { computed, onMounted, ref } from 'vue';
 import api from '../api';
 
+const timezoneOptions = ref([]);
+const allTimezones = ref([]);
+
 const sites = ref([]);
 const sipServers = ref([]);
 const loading = ref(false);
@@ -107,13 +145,22 @@ const deleteDialog = ref(false);
 const itemToDelete = ref(null);
 const deleteError = ref('');
 
-const emptyForm = () => ({ id: null, name: '', primary_sip_server: null, secondary_sip_server: null });
+const emptyForm = () => ({ 
+  id: null, 
+  name: '', 
+  primary_sip_server: null, 
+  secondary_sip_server: null,
+  timezone: 'UTC',
+  primary_ntp_ip: '',
+  secondary_ntp_ip: ''
+});
 const form = ref(emptyForm());
 
 const columns = [
   { name: 'name', label: 'Name', field: 'name', align: 'left', sortable: true },
   { name: 'primary_sip_server', label: 'Primary SIP', field: 'primary_sip_server', align: 'left' },
   { name: 'secondary_sip_server', label: 'Secondary SIP', field: 'secondary_sip_server', align: 'left' },
+  { name: 'timezone', label: 'Timezone', field: 'timezone', align: 'left' },
   { name: 'actions', label: 'Actions', field: 'actions', align: 'right' }
 ];
 
@@ -146,9 +193,61 @@ const extractErrorMessage = (error) => {
   return 'An unexpected error occurred. Please try again or contact support if the problem persists.';
 };
 
+const filterTimezones = (val, update) => {
+  if (val === '') {
+    update(() => {
+      timezoneOptions.value = allTimezones.value;
+    });
+    return;
+  }
+
+  update(() => {
+    const needle = val.toUpperCase();
+    timezoneOptions.value = allTimezones.value.filter(v =>
+      v.label.toUpperCase().includes(needle) || v.value.toUpperCase().includes(needle)
+    );
+  });
+};
+
 const loadSipServers = async () => {
   const { data } = await api.get('/sip-servers/');
   sipServers.value = data;
+};
+
+const loadTimezones = async () => {
+  try {
+    const { data } = await api.get('/timezones/');
+    // Backend returns array of { value, label, offset }
+    allTimezones.value = data;
+    timezoneOptions.value = data;
+  } catch (error) {
+    // Fallback: use common timezones with UTC offsets
+    const commonZones = [
+      { value: 'UTC', label: 'UTC (UTC+00:00)' },
+      { value: 'Africa/Johannesburg', label: 'Africa/Johannesburg (UTC+02:00)' },
+      { value: 'America/New_York', label: 'America/New_York (UTC-05:00)' },
+      { value: 'America/Los_Angeles', label: 'America/Los_Angeles (UTC-08:00)' },
+      { value: 'America/Chicago', label: 'America/Chicago (UTC-06:00)' },
+      { value: 'America/Denver', label: 'America/Denver (UTC-07:00)' },
+      { value: 'Europe/London', label: 'Europe/London (UTC+00:00)' },
+      { value: 'Europe/Paris', label: 'Europe/Paris (UTC+01:00)' },
+      { value: 'Europe/Berlin', label: 'Europe/Berlin (UTC+01:00)' },
+      { value: 'Europe/Moscow', label: 'Europe/Moscow (UTC+03:00)' },
+      { value: 'Asia/Tokyo', label: 'Asia/Tokyo (UTC+09:00)' },
+      { value: 'Asia/Shanghai', label: 'Asia/Shanghai (UTC+08:00)' },
+      { value: 'Asia/Hong_Kong', label: 'Asia/Hong_Kong (UTC+08:00)' },
+      { value: 'Asia/Singapore', label: 'Asia/Singapore (UTC+08:00)' },
+      { value: 'Asia/Bangkok', label: 'Asia/Bangkok (UTC+07:00)' },
+      { value: 'Asia/Kolkata', label: 'Asia/Kolkata (UTC+05:30)' },
+      { value: 'Australia/Sydney', label: 'Australia/Sydney (UTC+10:00)' },
+      { value: 'Australia/Melbourne', label: 'Australia/Melbourne (UTC+10:00)' },
+      { value: 'Australia/Perth', label: 'Australia/Perth (UTC+08:00)' },
+      { value: 'Australia/Brisbane', label: 'Australia/Brisbane (UTC+10:00)' },
+      { value: 'Pacific/Auckland', label: 'Pacific/Auckland (UTC+12:00)' }
+    ];
+    allTimezones.value = commonZones;
+    timezoneOptions.value = commonZones;
+  }
 };
 
 const loadSites = async () => {
@@ -218,7 +317,6 @@ const confirmDelete = async () => {
 };
 
 onMounted(async () => {
-  await loadSipServers();
-  await loadSites();
+  await Promise.all([loadSipServers(), loadTimezones(), loadSites()]);
 });
 </script>

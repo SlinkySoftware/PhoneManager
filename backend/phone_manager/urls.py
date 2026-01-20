@@ -17,6 +17,7 @@ router.register(r"device-types", provisioning_views.DeviceTypeViewSet, basename=
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/login/", core_views.login, name="login"),
+    path("api/timezones/", core_views.get_timezones, name="timezones"),
     path("api/", include(router.urls)),
     path("provision/", include("provisioning.urls")),
 ]

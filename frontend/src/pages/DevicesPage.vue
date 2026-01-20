@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later
+  Copyright (c) 2026 Slinky Software -->
 <template>
   <q-page class="q-pa-md">
     <div class="row items-center q-mb-md">
@@ -25,7 +27,7 @@
     </q-table>
 
     <!-- Create/Edit Dialog -->
-    <q-dialog v-model="dialog" class="q-gutter-md">
+    <q-dialog v-model="dialog" class="q-gutter-md" :persistent="true" :no-esc="true">
       <q-card style="min-width: 600px; max-width: 800px" class="bg-grey-9">
         <q-card-section class="bg-teal-9 text-white">
           <div class="text-h6">{{ form.id ? 'Edit' : 'Create' }} Device</div>
@@ -60,7 +62,7 @@
                   dark
                   :rules="[
                     val => !!val || 'MAC Address is required',
-                    val => /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(val) || 'Invalid MAC format'
+                    val => isValidMac(val) || 'Invalid MAC format'
                   ]"
                 />
                 <q-select
@@ -75,7 +77,6 @@
                   emit-value
                   map-options
                   color="teal"
-                  @update:model-value="onDeviceTypeChange"
                   :rules="[val => val !== null || 'Device Type is required']"
                 />
                 <q-select
@@ -87,6 +88,8 @@
                   dense
                   outlined
                   dark
+                  emit-value
+                  map-options
                   color="teal"
                   :rules="[val => val !== null || 'Site is required']"
                 />
@@ -97,6 +100,10 @@
             <q-card v-if="selectedDeviceType" flat class="bg-grey-8" style="border: 2px solid #1db885;">
               <q-card-section class="bg-teal-8 text-white">
                 <div class="text-subtitle1">Lines ({{ selectedDeviceType.numberOfLines }} line{{ selectedDeviceType.numberOfLines !== 1 ? 's' : '' }})</div>
+              </q-card-section>
+              <q-card-section v-if="lineDisassociationWarning" class="bg-amber-8 text-black">
+                <q-icon name="warning" class="q-mr-sm" />
+                {{ lineDisassociationWarning }}
               </q-card-section>
               <q-card-section class="q-gutter-md">
                 <q-select
@@ -295,7 +302,7 @@
 
         <!-- Actions -->
         <q-card-actions align="right" class="q-pa-md">
-          <q-btn flat label="Cancel" color="primary" v-close-popup />
+          <q-btn flat label="Cancel" color="primary" @click="handleCancel" />
           <q-btn unelevated label="Save" color="positive" @click="save" :loading="saving" />
         </q-card-actions>
       </q-card>
@@ -306,7 +313,7 @@
       <q-card style="min-width: 400px">
         <q-card-section class="text-h6">Confirm Deletion</q-card-section>
         <q-card-section>
-          <p>Are you sure you want to delete: <strong>{{ itemToDelete?.mac_address }}</strong>?</p>
+          <p>Are you sure you want to delete: <strong>{{ itemToDelete?.name }} ({{ itemToDelete?.mac_address }})</strong>?</p>
           <p class="text-caption text-grey-7">This action cannot be undone.</p>
         </q-card-section>
         <q-card-section v-if="deleteError" class="bg-negative text-white">
@@ -319,11 +326,25 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- Cancel Confirmation Dialog -->
+    <q-dialog v-model="cancelConfirmDialog">
+      <q-card style="min-width: 400px">
+        <q-card-section class="text-h6">Discard Changes?</q-card-section>
+        <q-card-section>
+          <p>Changes will be lost if you proceed without saving.</p>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat label="Keep Editing" color="primary" v-close-popup />
+          <q-btn unelevated label="Discard" color="negative" @click="discardAndClose" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import api from '../api';
 
 const devices = ref([]);
@@ -337,6 +358,12 @@ const errorMessage = ref('');
 const deleteDialog = ref(false);
 const itemToDelete = ref(null);
 const deleteError = ref('');
+const cancelConfirmDialog = ref(false);
+const formHasChanges = ref(false);
+const originalForm = ref(null);
+const originalLines = ref(null);
+const originalConfig = ref(null);
+const lineDisassociationWarning = ref('');
 
 const emptyForm = () => ({
   id: null,
@@ -348,23 +375,63 @@ const emptyForm = () => ({
 const form = ref(emptyForm());
 const formLines = ref([]);
 const deviceConfigValues = ref({});
+const isValidMac = (val) => {
+  if (!val) return false;
+  const patterns = [
+    /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/,   // aa:bb:cc:dd:ee:ff or aa-bb-cc-dd-ee-ff
+    /^[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}$/, // aabb.ccdd.eeff
+    /^[0-9A-Fa-f]{12}$/ // aabbccddeeff
+  ];
+  return patterns.some(rx => rx.test(val));
+};
+
+const normalizeMac = (val) => {
+  if (!val) return val;
+  const cleaned = val.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+  if (cleaned.length !== 12) return val;
+  return cleaned.match(/.{1,2}/g).join(':');
+};
+
 
 const selectedDeviceType = computed(() => {
   if (!form.value.device_type_id) return null;
   return deviceTypes.value.find(dt => dt.typeId === form.value.device_type_id);
 });
 
+const siteNameById = computed(() => {
+  const map = {};
+  sites.value.forEach(s => {
+    map[s.id] = s.name;
+  });
+  return map;
+});
+
 const columns = [
   { name: 'name', label: 'Name', field: 'name', align: 'left', sortable: true },
   { name: 'mac_address', label: 'MAC Address', field: 'mac_address', align: 'left' },
   { name: 'device_type_id', label: 'Type', field: 'device_type_id', align: 'left' },
-  { name: 'site', label: 'Site', field: 'site', align: 'left' },
+  { name: 'site', label: 'Site', field: 'site', format: val => siteNameById.value[val] || val, align: 'left' },
+  {
+    name: 'line_directory_numbers',
+    label: 'Directory Numbers',
+    field: row => row.line_directory_numbers || [],
+    format: val => (val || []).join(', '),
+    align: 'left'
+  },
   { name: 'actions', label: 'Actions', field: 'actions', align: 'right' }
 ];
 
 const extractErrorMessage = (error) => {
   if (error.response?.data?.detail) return error.response.data.detail;
   if (error.response?.data?.message) return error.response.data.message;
+  // Handle field-specific validation errors (e.g., {"mac_address": ["device with this mac address already exists."]})
+  if (error.response?.data && typeof error.response.data === 'object') {
+    const fieldErrors = Object.entries(error.response.data)
+      .filter(([, val]) => Array.isArray(val) && val.length > 0)
+      .map(([field, msgs]) => `${field}: ${msgs[0]}`)
+      .join('; ');
+    if (fieldErrors) return fieldErrors;
+  }
   if (error.response?.status === 409) {
     return 'Cannot complete this operation: The item is currently in use by other records.';
   }
@@ -500,23 +567,78 @@ const moveDeviceDownSelected = (optionId, idx) => {
   }
 };
 
-const onDeviceTypeChange = () => {
-  // Reset device-specific configuration and lines when device type changes
-  deviceConfigValues.value = {};
-  formLines.value = Array(selectedDeviceType.value?.numberOfLines || 0).fill(null);
+const optionIdsForType = (deviceType) => {
+  if (!deviceType?.deviceSpecificOptions?.sections) return new Set();
+  const ids = new Set();
+  deviceType.deviceSpecificOptions.sections.forEach(section => {
+    (section.options || []).forEach(option => {
+      if (option.optionId) ids.add(option.optionId);
+    });
+  });
+  return ids;
 };
+
+const preserveConfigForType = (newType) => {
+  const allowedIds = optionIdsForType(newType);
+  const currentConfig = { ...deviceConfigValues.value };
+  const filtered = {};
+  allowedIds.forEach(key => {
+    if (currentConfig[key] !== undefined) {
+      filtered[key] = currentConfig[key];
+    }
+  });
+  deviceConfigValues.value = filtered;
+};
+
+watch(
+  () => form.value.device_type_id,
+  (newTypeId) => {
+    if (!newTypeId) {
+      formLines.value = [];
+      deviceConfigValues.value = {};
+      lineDisassociationWarning.value = '';
+      return;
+    }
+    const newType = deviceTypes.value.find(dt => dt.typeId === newTypeId);
+    const prevLines = [...formLines.value];
+    const newCount = newType?.numberOfLines || 0;
+    const maxKeep = Math.min(prevLines.length, newCount);
+    const kept = prevLines.slice(0, maxKeep);
+    const removed = prevLines.slice(newCount).filter(val => val !== null && val !== undefined);
+
+    // Preserve overlapping config values
+    preserveConfigForType(newType);
+
+    // Pad or trim line assignments based on new device type
+    const updatedLines = [...kept];
+    while (updatedLines.length < newCount) {
+      updatedLines.push(null);
+    }
+    formLines.value = updatedLines;
+
+    lineDisassociationWarning.value = removed.length
+      ? `${removed.length} number of lines will be disassociated from this device`
+      : '';
+  }
+);
 
 const openCreate = () => {
   form.value = emptyForm();
   formLines.value = [];
   deviceConfigValues.value = {};
   errorMessage.value = '';
+  lineDisassociationWarning.value = '';
+  originalForm.value = null;
+  originalLines.value = null;
+  originalConfig.value = null;
+  formHasChanges.value = false;
   dialog.value = true;
 };
 
 const openEdit = async (row) => {
   form.value = { ...row };
   errorMessage.value = '';
+  lineDisassociationWarning.value = '';
   
   // Wait for selectedDeviceType to compute
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -525,10 +647,11 @@ const openEdit = async (row) => {
   if (selectedDeviceType.value) {
     formLines.value = Array(selectedDeviceType.value.numberOfLines).fill(null);
     if (row.line_1) formLines.value[0] = row.line_1;
-    if (row.lines) {
+    if (row.lines && Array.isArray(row.lines)) {
       row.lines.forEach((lineId, idx) => {
-        if (idx < formLines.value.length) {
-          formLines.value[idx] = lineId;
+        const formIdx = idx + 1; // lines array starts at slot 1 (slot 0 is line_1)
+        if (formIdx < formLines.value.length) {
+          formLines.value[formIdx] = lineId;
         }
       });
     }
@@ -536,6 +659,12 @@ const openEdit = async (row) => {
   
   // Load device-specific configuration
   deviceConfigValues.value = row.device_specific_configuration || {};
+  
+  // Track original state for changes detection
+  originalForm.value = JSON.parse(JSON.stringify(form.value));
+  originalLines.value = JSON.parse(JSON.stringify(formLines.value));
+  originalConfig.value = JSON.parse(JSON.stringify(deviceConfigValues.value));
+  formHasChanges.value = false;
   
   dialog.value = true;
 };
@@ -551,7 +680,7 @@ const save = async () => {
     errorMessage.value = 'MAC Address is required';
     return;
   }
-  if (!/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(form.value.mac_address)) {
+  if (!isValidMac(form.value.mac_address)) {
     errorMessage.value = 'Invalid MAC Address format';
     return;
   }
@@ -570,10 +699,11 @@ const save = async () => {
 
   saving.value = true;
   try {
+    form.value.mac_address = normalizeMac(form.value.mac_address);
     const payload = {
       ...form.value,
       line_1: formLines.value[0],
-      lines: formLines.value.slice(1),
+      lines: formLines.value.slice(1).filter(v => v !== null && v !== undefined),
       device_specific_configuration: deviceConfigValues.value
     };
     
@@ -606,6 +736,34 @@ const confirmDelete = async () => {
     deleteError.value = extractErrorMessage(error);
   }
 };
+
+const checkFormChanges = () => {
+  if (!originalForm.value) return false;
+  const formChanged = JSON.stringify(form.value) !== JSON.stringify(originalForm.value);
+  const linesChanged = JSON.stringify(formLines.value) !== JSON.stringify(originalLines.value);
+  const configChanged = JSON.stringify(deviceConfigValues.value) !== JSON.stringify(originalConfig.value);
+  formHasChanges.value = formChanged || linesChanged || configChanged;
+  return formHasChanges.value;
+};
+
+const handleCancel = () => {
+  if (checkFormChanges()) {
+    cancelConfirmDialog.value = true;
+  } else {
+    dialog.value = false;
+  }
+};
+
+const discardAndClose = () => {
+  cancelConfirmDialog.value = false;
+  dialog.value = false;
+};
+
+watch(
+  () => [form.value, formLines.value, deviceConfigValues.value],
+  () => checkFormChanges(),
+  { deep: true }
+);
 
 onMounted(async () => {
   await Promise.all([loadDevices(), loadDeviceTypes(), loadSites(), loadLines()]);

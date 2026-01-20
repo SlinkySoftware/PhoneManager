@@ -1,7 +1,10 @@
 """Serializers for core models."""
+from django.db.models import Q
 from rest_framework import serializers
 
-from .models import Device, DeviceTypeConfig, Line, SIPServer, Site
+from provisioning.registry import get_device_type
+
+from .models import Device, DeviceTypeConfig, Line, SIPServer, Site, mac_validator, normalize_mac
 
 
 class SIPServerSerializer(serializers.ModelSerializer):
@@ -23,9 +26,174 @@ class LineSerializer(serializers.ModelSerializer):
 
 
 class DeviceSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source="description", required=False, allow_blank=True)
+    line_directory_numbers = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Device
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "description",
+            "mac_address",
+            "device_type_id",
+            "site",
+            "line_1",
+            "lines",
+            "device_specific_configuration",
+            "enabled",
+            "line_directory_numbers",
+        ]
+
+    def get_line_directory_numbers(self, obj):
+        numbers = []
+        seen = set()
+        if obj.line_1:
+            if obj.line_1.directory_number not in seen:
+                numbers.append(obj.line_1.directory_number)
+                seen.add(obj.line_1.directory_number)
+        for line in obj.lines.all().order_by("directory_number"):
+            if line.directory_number in seen:
+                continue
+            numbers.append(line.directory_number)
+            seen.add(line.directory_number)
+        return numbers
+
+    def validate_mac_address(self, value):
+        normalized = normalize_mac(value)
+        mac_validator(normalized)
+
+        qs = Device.objects.all()
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.filter(mac_address__iexact=normalized).exists():
+            raise serializers.ValidationError("MAC address must be globally unique")
+        return normalized
+
+    def _get_max_lines(self, device_type_id: str) -> int:
+        device_type_cls = get_device_type(device_type_id)
+        if not device_type_cls:
+            raise serializers.ValidationError({"device_type_id": "Unknown device type"})
+        if device_type_cls.NumberOfLines < 1:
+            raise serializers.ValidationError({"device_type_id": "Device type must support at least one line"})
+        return device_type_cls.NumberOfLines
+
+    def _allowed_option_ids(self, device_type_id: str) -> set:
+        device_type_cls = get_device_type(device_type_id)
+        if not device_type_cls:
+            return set()
+        sections = device_type_cls.DeviceSpecificOptions.get("sections", [])
+        option_ids = set()
+        for section in sections:
+            for option in section.get("options", []):
+                if option_id := option.get("optionId"):
+                    option_ids.add(option_id)
+        return option_ids
+
+    def validate(self, attrs):
+        instance = getattr(self, "instance", None)
+        device_type_id = attrs.get("device_type_id") or (instance.device_type_id if instance else None)
+        max_lines = self._get_max_lines(device_type_id)
+
+        # Line 1 is required
+        line_1 = attrs.get("line_1", instance.line_1 if instance else None)
+        if not line_1:
+            raise serializers.ValidationError({"line_1": "Line 1 is required"})
+
+        # Clean up line assignments and enforce maximum
+        line_ids = []
+        line_objects = {}
+        line_1_id = line_1.id if isinstance(line_1, Line) else line_1
+        line_ids.append(line_1_id)
+        if isinstance(line_1, Line):
+            line_objects[line_1_id] = line_1
+
+        provided_lines = attrs.get("lines", None)
+        if provided_lines is not None:
+            cleaned_lines = []
+            seen_ids = set()
+            for line in provided_lines:
+                line_id = line.id if isinstance(line, Line) else line
+                if line_id is None:
+                    continue
+                if line_id == line_1_id:
+                    continue
+                if line_id in seen_ids:
+                    continue
+                cleaned_lines.append(line)
+                seen_ids.add(line_id)
+                line_ids.append(line_id)
+                if isinstance(line, Line):
+                    line_objects[line_id] = line
+            if len(cleaned_lines) > max_lines - 1:
+                cleaned_lines = cleaned_lines[: max_lines - 1]
+            attrs["lines"] = cleaned_lines
+        elif instance:
+            # Trim existing lines if type changed or exceeds max
+            existing = list(instance.lines.all())
+            if len(existing) > max_lines - 1:
+                attrs["lines"] = existing[: max_lines - 1]
+            for line in existing[: max_lines - 1]:
+                line_id = line.id if isinstance(line, Line) else line
+                line_ids.append(line_id)
+                if isinstance(line, Line):
+                    line_objects[line_id] = line
+            if len(existing) <= max_lines - 1:
+                for line in existing:
+                    line_id = line.id if isinstance(line, Line) else line
+                    line_ids.append(line_id)
+                    if isinstance(line, Line):
+                        line_objects[line_id] = line
+
+        # Enforce non-shared line exclusivity across devices
+        for db_line in Line.objects.filter(id__in=line_ids):
+            line_objects.setdefault(db_line.id, db_line)
+            if db_line.is_shared:
+                continue
+            conflict = Device.objects.filter(Q(line_1=db_line.id) | Q(lines__id=db_line.id))
+            if instance:
+                conflict = conflict.exclude(pk=instance.pk)
+            if conflict.exists():
+                raise serializers.ValidationError(
+                    {
+                        "lines": f"Line {db_line.name} ({db_line.directory_number}) is already assigned to another device",
+                    }
+                )
+
+        # Preserve overlapping device-specific configuration keys on type change
+        allowed_keys = self._allowed_option_ids(device_type_id)
+        incoming_config = attrs.get("device_specific_configuration")
+        existing_config = instance.device_specific_configuration if instance else {}
+        merged_config = {}
+
+        if incoming_config is not None:
+            # Keep only allowed keys from incoming
+            merged_config = {k: v for k, v in incoming_config.items() if k in allowed_keys}
+            # Preserve existing values for matching keys not supplied
+            if instance and device_type_id != instance.device_type_id:
+                for key in allowed_keys:
+                    if key not in merged_config and key in existing_config:
+                        merged_config[key] = existing_config[key]
+        else:
+            merged_config = {k: v for k, v in existing_config.items() if k in allowed_keys}
+
+        attrs["device_specific_configuration"] = merged_config
+
+        return super().validate(attrs)
+
+    def create(self, validated_data):
+        lines = validated_data.pop("lines", [])
+        device = super().create(validated_data)
+        if lines:
+            device.lines.set(lines)
+        return device
+
+    def update(self, instance, validated_data):
+        lines = validated_data.pop("lines", None)
+        device = super().update(instance, validated_data)
+        if lines is not None:
+            device.lines.set(lines)
+        return device
 
 
 class DeviceTypeConfigSerializer(serializers.ModelSerializer):

@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Slinky Software
 
 """REST API viewsets for core resources."""
+from datetime import datetime
 from django.contrib.auth.models import User
 from django.db import IntegrityError
 from django.db.models import ProtectedError
@@ -10,6 +11,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.decorators import action
+import pytz
 
 from .models import Device, DeviceTypeConfig, Line, SIPServer, Site
 from .serializers import DeviceSerializer, DeviceTypeConfigSerializer, LineSerializer, SIPServerSerializer, SiteSerializer
@@ -168,7 +170,7 @@ class LineViewSet(viewsets.ModelViewSet):
 
 
 class DeviceViewSet(viewsets.ModelViewSet):
-    queryset = Device.objects.select_related("site", "line_1")
+    queryset = Device.objects.select_related("site", "line_1").prefetch_related("lines")
     serializer_class = DeviceSerializer
     permission_classes = [AdminOrReadOnly]
 
@@ -277,3 +279,40 @@ class DeviceTypeConfigViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """Handle POST requests to create new configuration."""
         return super().create(request, *args, **kwargs)
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def get_timezones(request):
+    """Return all timezones with current UTC offsets.
+    
+    Returns a list of timezone objects with:
+    - value: timezone name (e.g., 'America/New_York')
+    - label: display string with offset (e.g., 'America/New_York (UTC-05:00)')
+    - offset: UTC offset hours (e.g., -5)
+    
+    Sorted alphabetically by timezone name.
+    """
+    now = datetime.now(pytz.UTC)
+    timezones = []
+    
+    for tz_name in sorted(pytz.common_timezones):
+        try:
+            tz = pytz.timezone(tz_name)
+            # Get current offset for this timezone
+            tz_now = now.astimezone(tz)
+            offset = tz_now.strftime('%z')
+            # Format offset as ±HH:MM
+            offset_hours = offset[:3]
+            offset_minutes = offset[3:5]
+            offset_str = f"{offset_hours}:{offset_minutes}"
+            
+            timezones.append({
+                'value': tz_name,
+                'label': f"{tz_name} (UTC{offset_str})",
+                'offset': offset_str
+            })
+        except Exception:
+            # Skip invalid timezones
+            continue
+    
+    return Response(timezones, status=status.HTTP_200_OK)

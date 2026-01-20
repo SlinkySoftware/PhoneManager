@@ -8,11 +8,25 @@ These models mirror the frontend-oriented structure described in the build promp
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
+from django.db.models import UniqueConstraint
+from django.db.models.functions import Lower
+import pytz
+
+
+def normalize_mac(mac: str) -> str:
+    """Normalize MAC to colon-separated uppercase form."""
+    if not mac:
+        return mac
+    cleaned = mac.replace("-", "").replace(":", "").upper()
+    if len(cleaned) != 12:
+        return mac
+    # Insert colons every 2 characters
+    return ":".join(cleaned[i : i + 2] for i in range(0, 12, 2))
 
 
 mac_validator = RegexValidator(
-    regex=r"^[0-9A-Fa-f]{2}(:?[0-9A-Fa-f]{2}){5}$",
-    message="MAC address must be 12 hex characters (colon optional)",
+    regex=r"^[0-9A-Fa-f]{2}([:-]?[0-9A-Fa-f]{2}){5}$",
+    message="MAC address must be 12 hex characters (colon or dash optional)",
 )
 
 
@@ -43,6 +57,22 @@ class Site(models.Model):
     primary_sip_server = models.ForeignKey(SIPServer, on_delete=models.PROTECT, related_name="primary_sites")
     secondary_sip_server = models.ForeignKey(
         SIPServer, on_delete=models.PROTECT, related_name="secondary_sites", null=True, blank=True
+    )
+    timezone = models.CharField(
+        max_length=64,
+        choices=[(tz, tz) for tz in pytz.common_timezones],
+        default="UTC",
+        help_text="Timezone for the site"
+    )
+    primary_ntp_ip = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="Primary NTP server IP address"
+    )
+    secondary_ntp_ip = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="Secondary NTP server IP address"
     )
 
     class Meta:
@@ -91,10 +121,20 @@ class Device(models.Model):
 
     class Meta:
         ordering = ["mac_address"]
+        constraints = [
+            UniqueConstraint(Lower("mac_address"), name="unique_mac_address_ci"),
+        ]
 
     def clean(self) -> None:
         if not self.mac_address:
             raise ValidationError("MAC address required")
+        # Normalize and validate format
+        self.mac_address = normalize_mac(self.mac_address)
+        mac_validator(self.mac_address)
 
     def __str__(self) -> str:
         return self.mac_address
+
+    def save(self, *args, **kwargs):
+        self.mac_address = normalize_mac(self.mac_address)
+        super().save(*args, **kwargs)
