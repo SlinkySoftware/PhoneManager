@@ -28,7 +28,7 @@
 
     <!-- Create/Edit Dialog -->
     <q-dialog v-model="dialog" class="q-gutter-md" :persistent="true" :no-esc="true">
-      <q-card style="min-width: 600px; max-width: 800px" class="bg-grey-9">
+      <q-card style="min-width: 800px; max-width: 1000px" class="bg-grey-9">
         <q-card-section class="bg-teal-9 text-white">
           <div class="text-h6">{{ form.id ? 'Edit' : 'Create' }} Device</div>
         </q-card-section>
