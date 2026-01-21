@@ -200,6 +200,16 @@ class DeviceSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         lines = validated_data.pop("lines", [])
+        
+        # Encrypt device-specific configuration passwords
+        if 'device_specific_configuration' in validated_data:
+            device = Device(
+                mac_address=validated_data['mac_address'],
+                device_type_id=validated_data['device_type_id']
+            )
+            device.set_encrypted_device_config(validated_data['device_specific_configuration'])
+            validated_data['device_specific_configuration'] = device.device_specific_configuration
+        
         device = super().create(validated_data)
         if lines:
             device.lines.set(lines)
@@ -212,7 +222,9 @@ class DeviceSerializer(serializers.ModelSerializer):
         # Handle password fields in device_specific_configuration
         if 'device_specific_configuration' in validated_data:
             incoming_config = validated_data['device_specific_configuration']
-            existing_config = instance.device_specific_configuration or {}
+            
+            # Get decrypted existing config for comparison
+            existing_config_decrypted = instance.get_decrypted_device_config()
             
             # Get device type to identify password fields
             device_type_id = validated_data.get('device_type_id', instance.device_type_id)
@@ -231,16 +243,26 @@ class DeviceSerializer(serializers.ModelSerializer):
                 # Preserve existing password values if not provided in update
                 for field in password_fields:
                     if field not in incoming_config or not incoming_config.get(field):
-                        # Keep existing password value
-                        if field in existing_config:
-                            incoming_config[field] = existing_config[field]
-                
-                validated_data['device_specific_configuration'] = incoming_config
+                        # Keep existing decrypted password value
+                        if field in existing_config_decrypted:
+                            incoming_config[field] = existing_config_decrypted[field]
+            
+            # Encrypt the passwords in the incoming config
+            instance.set_encrypted_device_config(incoming_config)
+            validated_data['device_specific_configuration'] = instance.device_specific_configuration
         
         device = super().update(instance, validated_data)
         if lines is not None:
             device.lines.set(lines)
         return device
+    
+    def to_representation(self, instance):
+        """Return decrypted device config in API responses."""
+        data = super().to_representation(instance)
+        # Decrypt device-specific configuration for API response
+        if instance.device_specific_configuration:
+            data['device_specific_configuration'] = instance.get_decrypted_device_config()
+        return data
 
 
 class DeviceTypeConfigSerializer(serializers.ModelSerializer):
@@ -249,6 +271,7 @@ class DeviceTypeConfigSerializer(serializers.ModelSerializer):
     
     Handles both the schema (common_options) and user-saved values.
     The 'saved_values' field stores the actual option values entered by users.
+    Passwords are automatically encrypted/decrypted.
     """
     saved_values = serializers.JSONField(required=False, allow_null=True)
 
@@ -257,10 +280,10 @@ class DeviceTypeConfigSerializer(serializers.ModelSerializer):
         fields = ["type_id", "common_options", "saved_values"]
 
     def to_representation(self, instance):
-        """Include saved_values in the response."""
+        """Include decrypted saved_values in the response."""
         data = super().to_representation(instance)
-        # Extract saved values from the model if stored
-        data['saved_values'] = instance.common_options.get('_saved_values', {})
+        # Return decrypted saved values
+        data['saved_values'] = instance.get_decrypted_saved_values()
         return data
 
     def create(self, validated_data):
@@ -268,21 +291,28 @@ class DeviceTypeConfigSerializer(serializers.ModelSerializer):
         saved_values = validated_data.pop('saved_values', {})
         instance = super().create(validated_data)
         
-        # Store saved values within common_options
+        # Encrypt and store saved values
         if saved_values:
-            instance.common_options['_saved_values'] = saved_values
+            instance.set_encrypted_saved_values(saved_values)
             instance.save()
         
         return instance
 
     def update(self, instance, validated_data):
-        """Update device type configuration and save user values."""
+        """Update device type configuration and save encrypted user values."""
         saved_values = validated_data.pop('saved_values', {})
+        
+        # Get existing decrypted values
+        existing_decrypted = instance.get_decrypted_saved_values()
+        
+        # Merge with incoming values (preserve passwords not provided)
+        merged_values = {**existing_decrypted, **saved_values}
+        
         instance = super().update(instance, validated_data)
         
-        # Store saved values within common_options
-        if saved_values:
-            instance.common_options['_saved_values'] = saved_values
+        # Encrypt and store saved values
+        if merged_values:
+            instance.set_encrypted_saved_values(merged_values)
             instance.save()
         
         return instance

@@ -13,6 +13,9 @@ from django.db.models import UniqueConstraint
 from django.db.models.functions import Lower
 import pytz
 
+from .fields import EncryptedCharField
+from .encryption import decrypt_password, encrypt_password
+
 
 def normalize_mac(mac: str) -> str:
     """Normalize MAC to colon-separated uppercase form."""
@@ -109,7 +112,7 @@ class Line(models.Model):
     name = models.CharField(max_length=128)
     directory_number = models.CharField(max_length=32)
     registration_account = models.CharField(max_length=64)
-    registration_password = models.CharField(max_length=256)
+    registration_password = EncryptedCharField(max_length=512)  # Encrypted storage, decrypted on access
     is_shared = models.BooleanField(default=False)
 
     class Meta:
@@ -130,6 +133,73 @@ class DeviceTypeConfig(models.Model):
 
     def __str__(self) -> str:
         return self.type_id
+    
+    def get_decrypted_saved_values(self):
+        """Get saved values with passwords decrypted.
+        
+        Returns dict with password fields decrypted for use in rendering.
+        """
+        saved_values = self.common_options.get('_saved_values', {})
+        if not saved_values:
+            return {}
+        
+        # Import here to avoid circular dependency
+        from provisioning.registry import get_device_type
+        
+        device_type_cls = get_device_type(self.type_id)
+        if not device_type_cls:
+            return saved_values
+        
+        # Identify password fields from CommonOptions schema
+        password_fields = set()
+        for section in device_type_cls.CommonOptions.get('sections', []):
+            for option in section.get('options', []):
+                if option.get('type') == 'password':
+                    password_fields.add(option['optionId'])
+        
+        # Decrypt password fields
+        decrypted = {}
+        for key, value in saved_values.items():
+            if key in password_fields and value:
+                decrypted[key] = decrypt_password(value)
+            else:
+                decrypted[key] = value
+        
+        return decrypted
+    
+    def set_encrypted_saved_values(self, values: dict):
+        """Set saved values with passwords encrypted.
+        
+        Args:
+            values: Dict of plaintext values from API/frontend
+        """
+        # Import here to avoid circular dependency
+        from provisioning.registry import get_device_type
+        
+        device_type_cls = get_device_type(self.type_id)
+        if not device_type_cls:
+            # No device type, store as-is
+            if '_saved_values' not in self.common_options:
+                self.common_options['_saved_values'] = {}
+            self.common_options['_saved_values'].update(values)
+            return
+        
+        # Identify password fields from CommonOptions schema
+        password_fields = set()
+        for section in device_type_cls.CommonOptions.get('sections', []):
+            for option in section.get('options', []):
+                if option.get('type') == 'password':
+                    password_fields.add(option['optionId'])
+        
+        # Encrypt password fields
+        if '_saved_values' not in self.common_options:
+            self.common_options['_saved_values'] = {}
+        
+        for key, value in values.items():
+            if key in password_fields and value:
+                self.common_options['_saved_values'][key] = encrypt_password(value)
+            else:
+                self.common_options['_saved_values'][key] = value
 
 
 class Device(models.Model):
@@ -162,3 +232,69 @@ class Device(models.Model):
     def save(self, *args, **kwargs):
         self.mac_address = normalize_mac(self.mac_address)
         super().save(*args, **kwargs)
+    
+    def get_decrypted_device_config(self):
+        """Get device-specific configuration with passwords decrypted.
+        
+        Returns dict with password fields decrypted for use in rendering.
+        """
+        if not self.device_specific_configuration:
+            return {}
+        
+        # Import here to avoid circular dependency
+        from provisioning.registry import get_device_type
+        
+        device_type_cls = get_device_type(self.device_type_id)
+        if not device_type_cls:
+            return self.device_specific_configuration
+        
+        # Identify password fields from DeviceSpecificOptions schema
+        password_fields = set()
+        device_specific_options = device_type_cls.DeviceSpecificOptions or {}
+        for section in device_specific_options.get('sections', []):
+            for option in section.get('options', []):
+                if option.get('type') == 'password':
+                    password_fields.add(option['optionId'])
+        
+        # Decrypt password fields
+        decrypted = {}
+        for key, value in self.device_specific_configuration.items():
+            if key in password_fields and value:
+                decrypted[key] = decrypt_password(value)
+            else:
+                decrypted[key] = value
+        
+        return decrypted
+    
+    def set_encrypted_device_config(self, values: dict):
+        """Set device-specific configuration with passwords encrypted.
+        
+        Args:
+            values: Dict of plaintext values from API/frontend
+        """
+        # Import here to avoid circular dependency
+        from provisioning.registry import get_device_type
+        
+        device_type_cls = get_device_type(self.device_type_id)
+        if not device_type_cls:
+            # No device type, store as-is
+            self.device_specific_configuration = values
+            return
+        
+        # Identify password fields from DeviceSpecificOptions schema
+        password_fields = set()
+        device_specific_options = device_type_cls.DeviceSpecificOptions or {}
+        for section in device_specific_options.get('sections', []):
+            for option in section.get('options', []):
+                if option.get('type') == 'password':
+                    password_fields.add(option['optionId'])
+        
+        # Encrypt password fields
+        encrypted_config = {}
+        for key, value in values.items():
+            if key in password_fields and value:
+                encrypted_config[key] = encrypt_password(value)
+            else:
+                encrypted_config[key] = value
+        
+        self.device_specific_configuration = encrypted_config

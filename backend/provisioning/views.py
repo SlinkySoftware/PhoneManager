@@ -67,6 +67,21 @@ class ProvisioningViewSet(viewsets.ViewSet):
         if not device_type_cls:
             return HttpResponse("Unsupported device type", status=status.HTTP_404_NOT_FOUND)
 
+        # Create a proxy device object with decrypted configuration
+        # This ensures renderers receive plaintext passwords
+        class DecryptedDevice:
+            """Proxy that provides decrypted device configuration to renderer."""
+            def __init__(self, original_device):
+                self._original = original_device
+                # Pre-decrypt configuration
+                self.device_specific_configuration = original_device.get_decrypted_device_config()
+            
+            def __getattr__(self, name):
+                # Delegate all other attributes to original device
+                return getattr(self._original, name)
+        
+        decrypted_device = DecryptedDevice(device)
+        
         renderer = device_type_cls(
             TypeID=device_type_cls.TypeID,
             Manufacturer=device_type_cls.Manufacturer,
@@ -75,7 +90,7 @@ class ProvisioningViewSet(viewsets.ViewSet):
             CommonOptions=device_type_cls.CommonOptions,
             DeviceSpecificOptions=device_type_cls.DeviceSpecificOptions,
         )
-        config_text = renderer.render(device)
+        config_text = renderer.render(decrypted_device)
         
         # Update last provisioned timestamp
         device.last_provisioned_at = timezone.now()

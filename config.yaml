@@ -4,6 +4,11 @@
 # Phone Provisioning Manager Configuration
 # This file contains default settings. Override with environment variables for sensitive data.
 
+# Encryption Key for Sensitive Data
+# CRITICAL: Change this in production! Use a strong random string (32+ characters)
+# Can also be set via ENCRYPTION_KEY environment variable
+ENCRYPTION_KEY: "change-this-to-a-secure-random-key-in-production"
+
 # SSO/SAML Configuration
 SSO_ENABLED: false
 
