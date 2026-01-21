@@ -4,8 +4,9 @@
   <q-page class="q-pa-md">
     <div class="row items-center q-mb-md">
       <div class="text-h5">Lines</div>
+      <q-badge v-if="isReadOnly" color="orange" label="Read Only Mode" class="q-ml-md" />
       <q-space />
-      <q-btn color="primary" icon="add" label="Add" @click="openCreate" class="q-ml-sm" />
+      <q-btn v-if="!isReadOnly" color="primary" icon="add" label="Add" @click="openCreate" class="q-ml-sm" />
       <q-btn flat color="secondary" icon="refresh" label="Refresh" @click="loadLines" class="q-ml-sm" />
     </div>
 
@@ -23,15 +24,18 @@
       </template>
       <template #body-cell-actions="props">
         <q-td align="right">
-          <q-btn dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
-          <q-btn dense flat icon="delete" color="negative" @click="openDeleteConfirm(props.row)" />
+          <q-btn v-if="!isReadOnly" dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
+          <q-btn v-if="isReadOnly" dense flat icon="visibility" color="info" @click="openEdit(props.row)">
+            <q-tooltip>View</q-tooltip>
+          </q-btn>
+          <q-btn v-if="!isReadOnly" dense flat icon="delete" color="negative" @click="openDeleteConfirm(props.row)" />
         </q-td>
       </template>
     </q-table>
 
     <q-dialog v-model="dialog">
       <q-card style="min-width: 480px">
-        <q-card-section class="text-h6">{{ form.id ? 'Edit' : 'Create' }} Line</q-card-section>
+        <q-card-section class="text-h6">{{ isReadOnly && form.id ? 'View' : form.id ? 'Edit' : 'Create' }} Line</q-card-section>
         <q-card-section v-if="errorMessage" class="bg-negative text-white q-mb-md">
           <q-icon name="error" class="q-mr-md" />
           {{ errorMessage }}
@@ -42,6 +46,7 @@
             label="Name"
             dense
             outlined
+            :disable="isReadOnly"
             :rules="[val => !!val || 'Name is required']"
           />
           <q-input
@@ -49,6 +54,7 @@
             label="Directory Number (+E164)"
             dense
             outlined
+            :disable="isReadOnly"
             :rules="[
               val => !!val || 'Directory Number is required',
               val => /^\+?[0-9]{7,15}$/.test(val) || 'Invalid E164 format (e.g., +61299999999)'
@@ -59,6 +65,7 @@
             label="Registration Account"
             dense
             outlined
+            :disable="isReadOnly"
             :rules="[val => !!val || 'Registration Account is required']"
           />
           <q-input
@@ -67,13 +74,30 @@
             dense
             outlined
             type="password"
-            :rules="[val => !!val || 'Password is required']"
-          />
-          <q-toggle v-model="form.is_shared" label="Shared" color="primary" />
+            :disable="isReadOnly"
+            :placeholder="form.id ? '••••••••' : ''"
+            @update:model-value="onPasswordChange"
+            :rules="form.id ? [] : [val => !!val || 'Password is required']"
+          >
+            <template v-slot:append>
+              <q-icon v-if="passwordChanged" name="warning" color="orange">
+                <q-tooltip>Password will be changed</q-tooltip>
+              </q-icon>
+            </template>
+            <template v-slot:hint>
+              <span v-if="form.id && !passwordChanged" class="text-grey-6">
+                Leave blank to keep current password
+              </span>
+              <span v-if="form.id && passwordChanged" class="text-orange" style="font-weight: 500;">
+                <q-icon name="warning" size="xs" /> Password will be changed
+              </span>
+            </template>
+          </q-input>
+          <q-toggle v-model="form.is_shared" label="Shared" color="primary" :disable="isReadOnly" />
         </q-card-section>
         <q-card-actions align="right">
-          <q-btn flat label="Cancel" color="primary" v-close-popup />
-          <q-btn unelevated color="primary" label="Save" @click="save" />
+          <q-btn flat :label="isReadOnly ? 'Close' : 'Cancel'" color="primary" v-close-popup />
+          <q-btn v-if="!isReadOnly" unelevated color="primary" label="Save" @click="save" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -99,8 +123,12 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import api from '../api';
+import { useAuthStore } from '../stores/auth';
+
+const authStore = useAuthStore();
+const isReadOnly = computed(() => authStore.user?.role === 'readonly');
 
 const lines = ref([]);
 const loading = ref(false);
@@ -109,6 +137,7 @@ const errorMessage = ref('');
 const deleteDialog = ref(false);
 const itemToDelete = ref(null);
 const deleteError = ref('');
+const passwordChanged = ref(false);
 
 const emptyForm = () => ({
   id: null,
@@ -158,13 +187,21 @@ const loadLines = async () => {
 const openCreate = () => {
   form.value = emptyForm();
   errorMessage.value = '';
+  passwordChanged.value = false;
   dialog.value = true;
 };
 
 const openEdit = (row) => {
   form.value = { ...row };
+  // Clear password for security - user must enter new one if they want to change it
+  form.value.registration_password = '';
   errorMessage.value = '';
+  passwordChanged.value = false;
   dialog.value = true;
+};
+
+const onPasswordChange = (val) => {
+  passwordChanged.value = form.value.id && val && val.length > 0;
 };
 
 const save = async () => {
@@ -184,12 +221,19 @@ const save = async () => {
 
   try {
     const payload = { ...form.value };
+    
+    // For updates, only include password if it was changed
+    if (payload.id && !passwordChanged.value) {
+      delete payload.registration_password;
+    }
+    
     if (payload.id) {
       await api.put(`/lines/${payload.id}/`, payload);
     } else {
       await api.post('/lines/', payload);
     }
     dialog.value = false;
+    passwordChanged.value = false;
     await loadLines();
   } catch (error) {
     errorMessage.value = extractErrorMessage(error);

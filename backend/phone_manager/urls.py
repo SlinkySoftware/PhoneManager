@@ -16,10 +16,16 @@ router.register(r"sites", core_views.SiteViewSet, basename="site")
 router.register(r"sip-servers", core_views.SIPServerViewSet, basename="sipserver")
 router.register(r"device-type-config", core_views.DeviceTypeConfigViewSet, basename="devicetypeconfig")
 router.register(r"device-types", provisioning_views.DeviceTypeViewSet, basename="devicetype")
+router.register(r"users", core_views.UserViewSet, basename="user")
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/login/", core_views.login, name="login"),
+    path("api/auth/config/", core_views.auth_config, name="auth_config"),
+    path("api/auth/change-password/", core_views.change_password, name="change_password"),
+    path("api/auth/saml/login/", core_views.saml_login, name="saml_login"),
+    path("api/auth/saml/acs/", core_views.saml_acs, name="saml_acs"),
+    path("api/auth/saml/metadata/", core_views.saml_metadata, name="saml_metadata"),
     path("api/timezones/", core_views.get_timezones, name="timezones"),
     path("api/", include(router.urls)),
     path("provision/", include("provisioning.urls")),

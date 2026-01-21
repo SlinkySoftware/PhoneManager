@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Slinky Software
+
+# Phone Provisioning Manager Configuration
+# This file contains default settings. Override with environment variables for sensitive data.
+
+# SSO/SAML Configuration
+SSO_ENABLED: false
+
+# SAML Service Provider (SP) Settings
+# These values identify this application to the Identity Provider (IdP)
+SAML_SP_ENTITY_ID: "http://localhost:8000/api/auth/saml/metadata/"
+SAML_SP_ACS_URL: "http://localhost:8000/api/auth/saml/acs/"
+
+# SAML Identity Provider (IdP) Settings
+# Configure these based on your IdP (Okta, Microsoft Entra, etc.)
+# Use environment variables for sensitive data like certificates
+SAML_IDP_ENTITY_ID: ""
+SAML_IDP_SSO_URL: ""
+SAML_IDP_SLO_URL: ""  # Optional: Single Logout URL
+SAML_IDP_X509_CERT: ""  # Base64-encoded certificate (or set via SAML_IDP_X509_CERT env var)
+
+# SAML Claim Mapping
+# These define which SAML attributes/claims determine user access and roles
+# USER_CLAIM: Required claim for any user to access the application (e.g., group membership)
+# ADMIN_CLAIM: Claim that grants admin role (if present, user gets admin; otherwise readonly)
+USER_CLAIM: "groups"  # Attribute name in SAML assertion
+USER_CLAIM_VALUE: "PhoneManager_Users"  # Required value for access
+
+ADMIN_CLAIM: "groups"  # Attribute name in SAML assertion
+ADMIN_CLAIM_VALUE: "PhoneManager_Admins"  # Value that grants admin role
+
+# SAML Security Settings
+SAML_SECURITY:
+  nameIdEncrypted: false
+  authnRequestsSigned: false
+  logoutRequestSigned: false
+  logoutResponseSigned: false
+  signMetadata: false
+  wantMessagesSigned: false
+  wantAssertionsSigned: true
+  wantNameId: true
+  wantNameIdEncrypted: false
+  wantAssertionsEncrypted: false
+  signatureAlgorithm: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+  digestAlgorithm: "http://www.w3.org/2001/04/xmlenc#sha256"
+
+# SAML Contact Information (optional, for metadata)
+SAML_CONTACT:
+  technical:
+    givenName: "Technical Support"
+    emailAddress: "support@example.com"
+  support:
+    givenName: "User Support"
+    emailAddress: "support@example.com"
+
+# SAML Organization Information (optional, for metadata)
+SAML_ORGANIZATION:
+  en-US:
+    name: "Your Organization"
+    displayname: "Your Organization Name"
+    url: "https://www.example.com"

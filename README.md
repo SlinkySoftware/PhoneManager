@@ -20,7 +20,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env
 python manage.py migrate
-python manage.py createsuperuser  # Create admin user
+python manage.py createadmin  # Create admin user (replaces createsuperuser)
 cd ..
 
 # Frontend initialization
@@ -84,12 +84,15 @@ Backend API will be available at http://localhost:8000/api
 
 - **Device Management**: CRUD operations for SIP devices with flexible provisioning
 - **Site & Line Management**: Organize devices into sites with multi-line support
+- **Authentication**: Token-based authentication with local users and SAML SSO support
+- **Role-Based Access Control**: Admin and Read-Only user roles with UI enforcement
+- **User Management**: Admin-only user creation, password reset, and role assignment
 - **REST APIs**: Comprehensive REST endpoints for all resources
 - **Provisioning**: Deterministic configuration generation keyed by MAC address
 - **Device Types**: Pluggable renderer framework with configurable options
-- **Authentication**: Token-based authentication with admin roles
 - **Web UI**: Quasar SPA with dark mode and intuitive forms
 - **Error Handling**: Comprehensive validation and user-friendly error messages
+- **SSO Integration**: SAML 2.0 support for Microsoft Entra, Okta, and other IdPs
 
 ## Documentation
 

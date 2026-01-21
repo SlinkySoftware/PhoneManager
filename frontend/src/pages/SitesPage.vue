@@ -4,8 +4,9 @@
   <q-page class="q-pa-md">
     <div class="row items-center q-mb-md">
       <div class="text-h5">Sites</div>
+      <q-badge v-if="isReadOnly" color="orange" label="Read Only Mode" class="q-ml-md" />
       <q-space />
-      <q-btn color="primary" icon="add" label="Add" @click="openCreate" class="q-ml-sm" />
+      <q-btn v-if="!isReadOnly" color="primary" icon="add" label="Add" @click="openCreate" class="q-ml-sm" />
       <q-btn flat color="secondary" icon="refresh" label="Refresh" @click="loadSites" class="q-ml-sm" />
     </div>
 
@@ -26,15 +27,18 @@
       </template>
       <template #body-cell-actions="props">
         <q-td align="right">
-          <q-btn dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
-          <q-btn dense flat icon="delete" color="negative" @click="openDeleteConfirm(props.row)" />
+          <q-btn v-if="!isReadOnly" dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
+          <q-btn v-if="isReadOnly" dense flat icon="visibility" color="info" @click="openEdit(props.row)">
+            <q-tooltip>View</q-tooltip>
+          </q-btn>
+          <q-btn v-if="!isReadOnly" dense flat icon="delete" color="negative" @click="openDeleteConfirm(props.row)" />
         </q-td>
       </template>
     </q-table>
 
     <q-dialog v-model="dialog">
       <q-card style="min-width: 520px">
-        <q-card-section class="text-h6">{{ form.id ? 'Edit' : 'Create' }} Site</q-card-section>
+        <q-card-section class="text-h6">{{ isReadOnly && form.id ? 'View' : form.id ? 'Edit' : 'Create' }} Site</q-card-section>
         <q-card-section v-if="errorMessage" class="bg-negative text-white q-mb-md">
           <q-icon name="error" class="q-mr-md" />
           {{ errorMessage }}
@@ -45,6 +49,7 @@
             label="Name"
             dense
             outlined
+            :disable="isReadOnly"
             :rules="[val => !!val || 'Name is required']"
           />
           <q-select
@@ -55,6 +60,7 @@
             outlined
             emit-value
             map-options
+            :disable="isReadOnly"
             :rules="[val => val !== null || 'Primary SIP Server is required']"
           />
           <q-select
@@ -66,6 +72,7 @@
             emit-value
             map-options
             clearable
+            :disable="isReadOnly"
           />
           <q-select
             v-model="form.timezone"
@@ -79,6 +86,7 @@
             use-input
             fill-input
             hide-selected
+            :disable="isReadOnly"
             :rules="[val => !!val || 'Timezone is required']"
             @filter="filterTimezones"
           />
@@ -88,6 +96,7 @@
             type="text"
             dense
             outlined
+            :disable="isReadOnly"
             :rules="[
               val => !val || /^(\d{1,3}\.){3}\d{1,3}$/.test(val) || 'Invalid IP address'
             ]"
@@ -98,14 +107,15 @@
             type="text"
             dense
             outlined
+            :disable="isReadOnly"
             :rules="[
               val => !val || /^(\d{1,3}\.){3}\d{1,3}$/.test(val) || 'Invalid IP address'
             ]"
           />
         </q-card-section>
         <q-card-actions align="right">
-          <q-btn flat label="Cancel" color="primary" v-close-popup />
-          <q-btn unelevated color="primary" label="Save" @click="save" />
+          <q-btn flat :label="isReadOnly ? 'Close' : 'Cancel'" color="primary" v-close-popup />
+          <q-btn v-if="!isReadOnly" unelevated color="primary" label="Save" @click="save" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -133,6 +143,10 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import api from '../api';
+import { useAuthStore } from '../stores/auth';
+
+const authStore = useAuthStore();
+const isReadOnly = computed(() => authStore.user?.role === 'readonly');
 
 const timezoneOptions = ref([]);
 const allTimezones = ref([]);

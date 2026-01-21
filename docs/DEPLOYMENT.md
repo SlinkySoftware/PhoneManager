@@ -12,7 +12,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 python manage.py migrate
-python manage.py createsuperuser
+python manage.py createadmin
 
 # Frontend
 cd ../frontend
@@ -128,7 +128,7 @@ cp .env.example .env
 # Edit .env with production settings
 nano .env
 python manage.py migrate
-python manage.py createsuperuser
+python manage.py createadmin
 ```
 
 ### Frontend Setup
@@ -336,6 +336,173 @@ sudo apt install certbot python3-certbot-nginx
 sudo certbot certonly --nginx -d your.domain.com
 sudo certbot renew --dry-run  # Test auto-renewal
 ```
+
+## SSO Configuration (Optional)
+
+### Prerequisites for SSO
+
+- Identity Provider (Microsoft Entra, Okta, or compatible SAML 2.0 IdP)
+- Valid SSL certificate (required for SAML ACS endpoint)
+- Public domain name (IdPs won't redirect to localhost)
+
+### Enable SSO
+
+1. **Create config.yaml** in repository root:
+
+```bash
+cp config.yaml.example config.yaml
+nano config.yaml
+```
+
+2. **Configure SSO settings:**
+
+```yaml
+SSO_ENABLED: true
+
+SAML:
+  SP:
+    ENTITY_ID: "https://your.domain.com"
+    ACS_URL: "https://your.domain.com/api/auth/saml/acs/"
+    SLS_URL: "https://your.domain.com/api/auth/saml/sls/"
+  
+  IDP:
+    ENTITY_ID: "https://sts.windows.net/<tenant-id>/"  # For Entra
+    SSO_URL: "https://login.microsoftonline.com/<tenant-id>/saml2"
+    SLS_URL: ""
+    X509_CERT: |
+      -----BEGIN CERTIFICATE-----
+      MIIDdTCCAl2gAwIBAgILBAAAAAABFUtaw5QwDQYJKoZIhvcNAQEFBQAwVzELMAkG
+      ... (full IdP certificate) ...
+      -----END CERTIFICATE-----
+  
+  SECURITY:
+    NAME_ID_ENCRYPTED: false
+    AUTHN_REQUESTS_SIGNED: false
+    LOGOUT_REQUESTS_SIGNED: false
+    LOGOUT_RESPONSES_SIGNED: false
+    WANT_MESSAGES_SIGNED: false
+    WANT_ASSERTIONS_SIGNED: false
+    WANT_ASSERTIONS_ENCRYPTED: false
+    WANT_NAME_ID_ENCRYPTED: false
+  
+  CLAIMS:
+    USER_CLAIM: "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+    ADMIN_CLAIM: "http://schemas.microsoft.com/ws/2008/06/identity/claims/groups"
+    ADMIN_VALUE: "<group-object-id>"  # Entra security group ID
+```
+
+3. **Update Nginx configuration** to allow SAML endpoints:
+
+Add to nginx config under `location /api/`:
+
+```nginx
+    # SAML endpoints
+    location /api/auth/saml/ {
+        proxy_pass http://backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+```
+
+4. **Restart services:**
+
+```bash
+sudo systemctl restart phonemanager-backend
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### IdP Configuration
+
+#### Microsoft Entra ID
+
+1. Create Enterprise Application
+2. Configure SAML settings:
+   - **Identifier (Entity ID):** `https://your.domain.com`
+   - **Reply URL (ACS):** `https://your.domain.com/api/auth/saml/acs/`
+3. Download Federation Metadata XML
+4. Extract certificate and SSO URL for config.yaml
+5. Create security group for admin role
+6. Assign users to application
+
+#### Okta
+
+1. Create SAML 2.0 Application
+2. Configure SAML settings:
+   - **Single sign on URL:** `https://your.domain.com/api/auth/saml/acs/`
+   - **Audience URI (SP Entity ID):** `https://your.domain.com`
+3. View Setup Instructions to get metadata URL
+4. Copy certificate and SSO URL for config.yaml
+5. Create groups and map to claims
+6. Assign users to application
+
+**Detailed setup instructions:** See [docs/SSO_SETUP.md](SSO_SETUP.md)
+
+### Testing SSO
+
+1. **Access login page:** https://your.domain.com/
+2. **SSO button should be visible** (verifies config loaded)
+3. **Click "Sign in with SSO"**
+4. **Authenticate with IdP** (Microsoft/Okta login page)
+5. **Should redirect back** to application with token
+6. **Check user role** in top-right menu
+
+### Troubleshooting SSO
+
+**SSO button not visible:**
+```bash
+# Check config.yaml is readable
+sudo -u phonemanager cat /opt/phonemanager/config.yaml
+
+# Check backend logs
+sudo journalctl -u phonemanager-backend | grep -i saml
+
+# Test config endpoint
+curl https://your.domain.com/api/auth/config/
+# Should return: {"ssoEnabled": true}
+```
+
+**SAML assertion errors:**
+```bash
+# Check certificate formatting
+grep -A 5 "X509_CERT" config.yaml
+
+# Verify IdP metadata
+curl "https://your.domain.com/api/auth/saml/metadata/" | xmllint --format -
+```
+
+**User provisioning fails:**
+```bash
+# Check backend logs for claim extraction
+sudo journalctl -u phonemanager-backend | grep -i "saml\|claim"
+
+# Verify USER_CLAIM and ADMIN_CLAIM settings match IdP
+# Common Entra claims:
+#   - name: http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name
+#   - email: http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress
+#   - groups: http://schemas.microsoft.com/ws/2008/06/identity/claims/groups
+```
+
+**Role assignment not working:**
+```bash
+# Check user profile in database
+sudo -u postgres psql phonemanager -c "SELECT u.username, p.role, p.is_sso FROM auth_user u JOIN core_userprofile p ON u.id=p.user_id WHERE u.username='<username>';"
+
+# Verify ADMIN_VALUE matches group/claim value
+# For Entra: Use Group Object ID (not name)
+# For Okta: Use exact group name or claim value
+```
+
+### Disabling SSO
+
+Set `SSO_ENABLED: false` in config.yaml and restart:
+
+```bash
+sudo systemctl restart phonemanager-backend
+```
+
+SSO button will disappear from login page, users can only login with local credentials.
 
 ## Security Checklist
 

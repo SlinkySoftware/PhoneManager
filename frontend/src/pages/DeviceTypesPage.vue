@@ -2,7 +2,10 @@
      Copyright (c) 2026 Slinky Software -->
 <template>
   <q-page class="q-pa-md">
-    <div class="text-h5 q-mb-md">Device Types</div>
+    <div class="row items-center q-mb-md">
+      <div class="text-h5">Device Types</div>
+      <q-badge v-if="isReadOnly" color="orange" label="Read Only Mode" class="q-ml-md" />
+    </div>
     <q-card flat bordered class="bg-dark">
       <q-card-section>
         <q-btn color="primary" flat icon="refresh" label="Refresh" @click="loadTypes" :loading="loading" />
@@ -17,7 +20,7 @@
               <q-item-label caption>TypeID: {{ dt.typeId }} · Lines: {{ dt.numberOfLines }}</q-item-label>
             </q-item-section>
             <q-item-section side>
-              <q-btn color="secondary" flat label="Common Options" @click="openOptions(dt)" />
+              <q-btn color="secondary" flat :label="isReadOnly ? 'View Options' : 'Common Options'" @click="openOptions(dt)" />
             </q-item-section>
           </q-item>
         </q-list>
@@ -29,7 +32,7 @@
       <q-card style="min-width: 600px; max-width: 800px" class="bg-grey-9">
         <!-- Header -->
         <q-card-section class="bg-green-10 text-white">
-          <div class="text-h6">{{ selectedType?.manufacturer }} {{ selectedType?.model }} - Common Options</div>
+          <div class="text-h6">{{ selectedType?.manufacturer }} {{ selectedType?.model }} - {{ isReadOnly ? 'View' : 'Common' }} Options</div>
           <div class="text-caption text-green-2">TypeID: {{ selectedType?.typeId }}</div>
         </q-card-section>
 
@@ -62,6 +65,7 @@
                   outlined
                   dense
                   dark
+                  :disable="isReadOnly"
                   :hint="option.mandatory ? 'Required' : 'Optional'"
                   :rules="option.mandatory ? [val => !!val || `${option.friendlyName} is required`] : []"
                 />
@@ -75,6 +79,7 @@
                   outlined
                   dense
                   dark
+                  :disable="isReadOnly"
                   :hint="option.mandatory ? 'Required' : 'Optional'"
                   :rules="option.mandatory ? [val => val !== null && val !== '' || `${option.friendlyName} is required`] : []"
                 />
@@ -91,6 +96,7 @@
                   emit-value
                   map-options
                   color="green"
+                  :disable="isReadOnly"
                   :hint="option.mandatory ? 'Required' : 'Optional'"
                   :rules="option.mandatory ? [val => val !== null && val !== '' || `${option.friendlyName} is required`] : []"
                 />
@@ -102,6 +108,7 @@
                   :label="option.friendlyName"
                   dense
                   color="green"
+                  :disable="isReadOnly"
                 />
 
                 <!-- Textarea -->
@@ -114,6 +121,7 @@
                   rows="3"
                   dense
                   dark
+                  :disable="isReadOnly"
                   :hint="option.mandatory ? 'Required' : 'Optional'"
                   :rules="option.mandatory ? [val => !!val || `${option.friendlyName} is required`] : []"
                 />
@@ -129,11 +137,11 @@
                         <q-item
                           v-for="avail in availableOptions(option)"
                           :key="avail"
-                          clickable
-                          @click="moveToSelected(option.optionId, avail)"
+                          :clickable="!isReadOnly"
+                          @click="!isReadOnly && moveToSelected(option.optionId, avail)"
                         >
                           <q-item-section avatar>
-                            <q-icon name="chevron_right" color="green" />
+                            <q-icon name="chevron_right" :color="isReadOnly ? 'grey' : 'green'" />
                           </q-item-section>
                           <q-item-section class="text-white">{{ avail }}</q-item-section>
                         </q-item>
@@ -152,7 +160,7 @@
                           <q-item-section avatar>
                             <div class="column q-gutter-xs">
                               <q-btn
-                                v-if="idx > 0"
+                                v-if="idx > 0 && !isReadOnly"
                                 flat
                                 dense
                                 round
@@ -162,7 +170,7 @@
                                 @click="moveUpSelected(option.optionId, idx)"
                               />
                               <q-btn
-                                v-if="idx < (optionValues[option.optionId] || []).length - 1"
+                                v-if="idx < (optionValues[option.optionId] || []).length - 1 && !isReadOnly"
                                 flat
                                 dense
                                 round
@@ -176,6 +184,7 @@
                           <q-item-section class="text-white">{{ selected }}</q-item-section>
                           <q-item-section avatar>
                             <q-btn
+                              v-if="!isReadOnly"
                               flat
                               dense
                               round
@@ -212,10 +221,11 @@
 
         <!-- Actions -->
         <q-card-actions class="q-pa-md">
-          <q-btn flat label="Reset to Defaults" color="warning" @click="confirmReset" />
+          <q-btn v-if="!isReadOnly" flat label="Reset to Defaults" color="warning" @click="confirmReset" />
           <q-space />
-          <q-btn flat label="Cancel" color="primary" v-close-popup />
+          <q-btn flat :label="isReadOnly ? 'Close' : 'Cancel'" color="primary" v-close-popup />
           <q-btn
+            v-if="!isReadOnly"
             unelevated
             label="Save"
             color="positive"
@@ -248,6 +258,10 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import api from '../api';
+import { useAuthStore } from '../stores/auth';
+
+const authStore = useAuthStore();
+const isReadOnly = computed(() => authStore.user?.role === 'readonly');
 
 const deviceTypes = ref([]);
 const selectedType = ref(null);

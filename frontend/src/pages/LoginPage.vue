@@ -42,6 +42,19 @@
           />
         </q-form>
 
+        <!-- SSO Login Button (conditionally shown) -->
+        <div v-if="ssoEnabled" class="q-mt-md">
+          <q-separator dark class="q-mb-md" />
+          <q-btn
+            color="secondary"
+            label="Log in via SSO"
+            icon="cloud"
+            class="full-width"
+            @click="handleSSOLogin"
+            unelevated
+          />
+        </div>
+
         <q-linear-progress
           v-if="isLoading"
           indeterminate
@@ -55,23 +68,18 @@
           {{ errorMessage }}
         </q-banner>
       </q-card-section>
-
-      <q-card-section class="text-center text-caption text-grey-7">
-        <p class="q-my-sm">Demo credentials:</p>
-        <p class="q-my-xs">Username: admin</p>
-        <p class="q-my-xs">Password: (set during setup)</p>
-      </q-card-section>
     </q-card>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, onMounted } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import axios from 'axios';
 
 const router = useRouter();
+const route = useRoute();
 const authStore = useAuthStore();
 
 const credentials = ref({
@@ -81,6 +89,20 @@ const credentials = ref({
 
 const isLoading = ref(false);
 const errorMessage = ref('');
+const ssoEnabled = ref(false);
+
+// Check if SSO is enabled
+const checkSSOConfig = async () => {
+  try {
+    const api = axios.create({
+      baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
+    });
+    const response = await api.get('/auth/config/');
+    ssoEnabled.value = response.data.sso_enabled;
+  } catch (error) {
+    console.error('Error fetching auth config:', error);
+  }
+};
 
 const handleLogin = async () => {
   errorMessage.value = '';
@@ -101,8 +123,13 @@ const handleLogin = async () => {
     authStore.setToken(token);
     authStore.setUser(user);
 
-    // Redirect to dashboard
-    router.push('/device-types');
+    // Check if user needs to change password
+    if (user.force_password_reset) {
+      router.push('/change-password');
+    } else {
+      // Redirect to dashboard
+      router.push('/device-types');
+    }
   } catch (error) {
     if (error.response?.status === 401) {
       errorMessage.value = 'Invalid username or password';
@@ -115,6 +142,39 @@ const handleLogin = async () => {
     isLoading.value = false;
   }
 };
+
+const handleSSOLogin = () => {
+  // Redirect to SAML login endpoint
+  const baseURL = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api';
+  window.location.href = `${baseURL}/auth/saml/login/`;
+};
+
+// Handle SSO callback with token in URL
+onMounted(async () => {
+  await checkSSOConfig();
+  
+  // Check if token is in URL query (SSO callback)
+  const token = route.query.token;
+  if (token) {
+    try {
+      const api = axios.create({
+        baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:8000/api',
+        headers: {
+          Authorization: `Token ${token}`
+        }
+      });
+      
+      // Fetch user info with the token
+      // This assumes the backend stores user info in the session or we need to fetch it
+      authStore.setToken(token);
+      
+      // For SSO, we'll redirect and let the app fetch user info
+      router.push('/device-types');
+    } catch (error) {
+      errorMessage.value = 'SSO login failed. Please try again.';
+    }
+  }
+});
 </script>
 
 <style scoped>

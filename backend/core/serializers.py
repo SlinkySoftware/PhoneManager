@@ -2,12 +2,13 @@
 # Copyright (c) 2026 Slinky Software
 
 """Serializers for core models."""
+from django.contrib.auth.models import User
 from django.db.models import Q
 from rest_framework import serializers
 
 from provisioning.registry import get_device_type
 
-from .models import Device, DeviceTypeConfig, Line, SIPServer, Site, mac_validator, normalize_mac
+from .models import Device, DeviceTypeConfig, Line, SIPServer, Site, UserProfile, mac_validator, normalize_mac
 
 
 class SIPServerSerializer(serializers.ModelSerializer):
@@ -26,6 +27,19 @@ class LineSerializer(serializers.ModelSerializer):
     class Meta:
         model = Line
         fields = "__all__"
+        extra_kwargs = {
+            'registration_password': {'required': False, 'allow_blank': True}
+        }
+    
+    def update(self, instance, validated_data):
+        """Only update password if provided."""
+        # If password is empty string or not provided, keep existing password
+        if 'registration_password' in validated_data:
+            password = validated_data.get('registration_password', '').strip()
+            if not password:
+                validated_data.pop('registration_password')
+        
+        return super().update(instance, validated_data)
 
 
 class DeviceSerializer(serializers.ModelSerializer):
@@ -192,7 +206,37 @@ class DeviceSerializer(serializers.ModelSerializer):
         return device
 
     def update(self, instance, validated_data):
+        """Update device, preserving password fields that weren't changed."""
         lines = validated_data.pop("lines", None)
+        
+        # Handle password fields in device_specific_configuration
+        if 'device_specific_configuration' in validated_data:
+            incoming_config = validated_data['device_specific_configuration']
+            existing_config = instance.device_specific_configuration or {}
+            
+            # Get device type to identify password fields
+            device_type_id = validated_data.get('device_type_id', instance.device_type_id)
+            from provisioning.registry import get_device_type
+            device_type_cls = get_device_type(device_type_id)
+            
+            if device_type_cls:
+                # Identify password fields
+                password_fields = set()
+                sections = device_type_cls.DeviceSpecificOptions.get("sections", [])
+                for section in sections:
+                    for option in section.get("options", []):
+                        if option.get("type") == "password":
+                            password_fields.add(option.get("optionId"))
+                
+                # Preserve existing password values if not provided in update
+                for field in password_fields:
+                    if field not in incoming_config or not incoming_config.get(field):
+                        # Keep existing password value
+                        if field in existing_config:
+                            incoming_config[field] = existing_config[field]
+                
+                validated_data['device_specific_configuration'] = incoming_config
+        
         device = super().update(instance, validated_data)
         if lines is not None:
             device.lines.set(lines)
@@ -242,4 +286,35 @@ class DeviceTypeConfigSerializer(serializers.ModelSerializer):
             instance.save()
         
         return instance
+
+
+class UserSerializer(serializers.ModelSerializer):
+    """Serializer for User model with profile information."""
+    
+    role = serializers.SerializerMethodField()
+    is_sso = serializers.SerializerMethodField()
+    force_password_reset = serializers.SerializerMethodField()
+    full_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'full_name', 'is_active', 'role', 'is_sso', 'force_password_reset']
+        read_only_fields = ['id', 'is_active', 'is_sso', 'full_name']
+    
+    def get_role(self, obj):
+        """Get user role from profile."""
+        return obj.profile.role if hasattr(obj, 'profile') else UserProfile.ROLE_READONLY
+    
+    def get_is_sso(self, obj):
+        """Get SSO status from profile."""
+        return obj.profile.is_sso if hasattr(obj, 'profile') else False
+    
+    def get_force_password_reset(self, obj):
+        """Get force password reset flag from profile."""
+        return obj.profile.force_password_reset if hasattr(obj, 'profile') else False
+    
+    def get_full_name(self, obj):
+        """Get full name from first_name and last_name."""
+        return f"{obj.first_name} {obj.last_name}".strip() or obj.username
+
 

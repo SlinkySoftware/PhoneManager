@@ -73,16 +73,176 @@ DeviceTypeConfig
 ├── type_id (unique, device type identifier)
 ├── common_options (JSON schema + saved values)
 └── timestamps (created, updated)
+
+UserProfile
+├── user (OneToOne → auth.User)
+├── role (CharField: 'admin' or 'readonly')
+├── is_sso (BooleanField: SSO vs local authentication)
+├── force_password_reset (BooleanField: requires password change)
+└── timestamps (created, updated)
 ```
+
+## Authentication & Authorization
+
+### Authentication Methods
+
+The system supports two authentication methods:
+
+1. **Local Authentication** - Username/password stored in Django's auth system
+2. **SAML SSO** - Single Sign-On via SAML 2.0 (Microsoft Entra, Okta, etc.)
+
+### Authentication Flow
+
+#### Local Authentication Flow
+
+```
+User enters credentials → POST /api/auth/login/
+    ↓
+Django validates username/password
+    ↓
+Check force_password_reset flag
+    ↓ (if true)
+Return token + redirect to /change-password
+    ↓ (if false)
+Return token + user profile (username, role, is_sso)
+    ↓
+Frontend stores token in localStorage
+    ↓
+Frontend includes token in Authorization header for all API calls
+```
+
+#### SAML SSO Flow
+
+```
+User clicks "Sign in with SSO" → GET /api/auth/saml/login/
+    ↓
+Backend generates SAML AuthnRequest
+    ↓
+Redirect to IdP login page (Microsoft/Okta)
+    ↓
+User authenticates with IdP
+    ↓
+IdP POSTs SAML assertion to ACS endpoint → POST /api/auth/saml/acs/
+    ↓
+Backend validates SAML assertion
+    ↓
+Extract USER_CLAIM (username) and ADMIN_CLAIM (role)
+    ↓
+Auto-provision/update user in database
+    ↓
+Generate token
+    ↓
+Redirect to frontend with token as query parameter
+    ↓
+Frontend extracts token and stores in localStorage
+```
+
+### Role-Based Access Control
+
+Two user roles with different permissions:
+
+| Role | Access Level | UI Behavior | API Enforcement |
+|------|--------------|-------------|-----------------|
+| **Admin** | Full CRUD access to all resources | All buttons/forms enabled; Users page accessible | All HTTP methods allowed on protected endpoints |
+| **Read Only** | View-only access to all resources | Add/Edit/Delete buttons hidden; Users page hidden; Orange "Read Only Mode" badge shown | Only GET/HEAD/OPTIONS allowed; POST/PUT/PATCH/DELETE return 403 Forbidden |
+
+### Permission Classes
+
+**IsAuthenticated** - Requires valid token (both roles can access)
+- Used for: Read endpoints (GET)
+
+**IsAdmin** - Requires role='admin'
+- Used for: User management page, admin-only actions
+
+**IsAdminOrReadOnly** - Allows read for all authenticated users, write only for admins
+- Used for: All resource ViewSets (Devices, Lines, Sites, SIPServers, DeviceTypeConfig)
+- Implementation:
+  ```python
+  def has_permission(self, request, view):
+      if not request.user.is_authenticated:
+          return False
+      if request.method in SAFE_METHODS:  # GET, HEAD, OPTIONS
+          return True
+      return request.user.profile.role == 'admin'
+  ```
+
+### User Management
+
+**Admin-Only Capabilities:**
+- Create new local users (generates 16-character temporary password)
+- Reset user passwords (generates new temporary password)
+- Delete/deactivate users (SSO users are deactivated, local users are deleted)
+- View all users with role and authentication type
+
+**All Users:**
+- Change their own password (local users only)
+- View their account information
+
+**Temporary Password System:**
+- New users receive a temporary password (displayed once)
+- `force_password_reset` flag set to `true`
+- On first login, user redirected to `/change-password`
+- Must enter old password + new password (min 8 chars)
+- After successful change, `force_password_reset` set to `false`
+
+### SSO User Auto-Provisioning
+
+When a user authenticates via SAML:
+
+1. **Extract Claims:**
+   - `USER_CLAIM` → Username (e.g., "john.doe@example.com")
+   - `ADMIN_CLAIM` → Group membership or role claim
+
+2. **Determine Role:**
+   - If `ADMIN_VALUE` in user's claims → role='admin'
+   - Otherwise → role='readonly'
+
+3. **Create/Update User:**
+   - Check if user exists (by username)
+   - If new: Create User + UserProfile with is_sso=True
+   - If existing: Update role if changed
+   - No password required (SSO users can't use local login)
+
+4. **Generate Token:**
+   - Create Django Token for API authentication
+   - Return token to frontend
+
+### API Security
+
+**Protected Endpoints:**
+- All `/api/*` endpoints except `/api/auth/login/`, `/api/auth/config/`, `/api/auth/saml/*`
+- Require `Authorization: Token <token>` header
+- Token validated against database
+
+**Provisioning Endpoints:**
+- `/provision/<MAC>` is **intentionally unauthenticated** (phones use MAC address for identification)
+- All requests logged to ProvisioningLog table
+
+**CORS Configuration:**
+- Whitelist frontend origin only
+- Credentials allowed for authenticated requests
 
 ## API Architecture
 
 ### REST API Endpoints
 
 **Authentication** (Public)
-- `POST /api/auth/login/` - Exchange credentials for JWT token
+- `POST /api/auth/login/` - Exchange credentials for token
+- `GET /api/auth/config/` - Get SSO configuration status
+- `GET /api/auth/saml/login/` - Initiate SAML login flow
+- `POST /api/auth/saml/acs/` - SAML Assertion Consumer Service (IdP callback)
+- `GET /api/auth/saml/metadata/` - Service Provider metadata XML
 
-**Admin APIs** (Requires Authentication)
+**User Management** (Requires Admin Role)
+- `GET /api/users/` - List all users
+- `POST /api/users/` - Create new local user
+- `DELETE /api/users/{id}/` - Delete local user or deactivate SSO user
+- `POST /api/users/{id}/reset_password/` - Reset user password
+
+**Password Management** (Requires Authentication)
+- `POST /api/auth/change-password/` - Change own password (local users only)
+
+**Admin APIs** (Requires Authentication, Write requires Admin Role)
 - `GET/POST /api/devices/` - List/create devices
 - `GET/PUT/DELETE /api/devices/{id}/` - Retrieve/update/delete device
 - `GET/POST /api/lines/` - Manage phone lines
@@ -147,24 +307,10 @@ class DeviceType:
         return config
 ```
 
-## Authentication & Authorization
-
-### Token-Based Authentication
-1. User POSTs username/password to `/api/auth/login/`
-2. Server validates credentials and returns JWT token
-3. Client includes token in `Authorization: Token <token>` header
-4. Protected endpoints verify token and check permissions
-
-### Permission Levels
-- **AllowAny**: Provisioning endpoints, login, timezone list
-- **Authenticated**: Read access to all admin APIs
-- **AdminOrReadOnly**: Write access requires staff status
-- **ProtectedError Handling**: Foreign key violations return 409 Conflict
-
 ## Frontend Architecture
 
 ### Page Structure
-- **Pages**: Route components (Devices, Lines, Sites, Device Types)
+- **Pages**: Route components (Devices, Lines, Sites, Device Types, Users, Change Password, User Settings)
 - **Components**: Reusable UI elements (tables, dialogs, forms)
 - **Stores**: Pinia stores for auth state and session
 - **Services**: API client modules with Axios
@@ -266,7 +412,8 @@ class DeviceType:
 
 - **ARCHITECTURE.md**: This file - system design and flow
 - **AUTHENTICATION.md**: Login flow and JWT token management
-- **DEPLOYMENT.md**: Production deployment checklist
+- **DEPLOYMENT.md**: Production deployment checklist (includes SSO setup)
+- **SSO_SETUP.md**: Comprehensive SAML SSO configuration guide
 - **FRONTEND_GUIDELINES.md**: UI development patterns
 - **DEVICE_TYPE_OPTIONS.md**: Configuration schema system
 - **.github/copilot-instructions.md**: Development standards

@@ -4,8 +4,9 @@
   <q-page class="q-pa-md">
     <div class="row items-center q-mb-md">
       <div class="text-h5">Devices</div>
+      <q-badge v-if="isReadOnly" color="orange" label="Read Only Mode" class="q-ml-md" />
       <q-space />
-      <q-btn color="primary" icon="add" label="Add" @click="openCreate" class="q-ml-sm" />
+      <q-btn v-if="!isReadOnly" color="primary" icon="add" label="Add" @click="openCreate" class="q-ml-sm" />
       <q-btn flat color="secondary" icon="refresh" label="Refresh" @click="loadDevices" class="q-ml-sm" />
     </div>
 
@@ -20,8 +21,11 @@
     >
       <template #body-cell-actions="props">
         <q-td align="right">
-          <q-btn dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
-          <q-btn dense flat icon="delete" color="negative" @click="openDeleteConfirm(props.row)" />
+          <q-btn v-if="!isReadOnly" dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
+          <q-btn v-if="isReadOnly" dense flat icon="visibility" color="info" @click="openEdit(props.row)">
+            <q-tooltip>View</q-tooltip>
+          </q-btn>
+          <q-btn v-if="!isReadOnly" dense flat icon="delete" color="negative" @click="openDeleteConfirm(props.row)" />
         </q-td>
       </template>
     </q-table>
@@ -30,7 +34,7 @@
     <q-dialog v-model="dialog" class="q-gutter-md" :persistent="true" :no-esc="true">
       <q-card style="min-width: 800px; max-width: 1000px" class="bg-grey-9">
         <q-card-section class="bg-teal-9 text-white">
-          <div class="text-h6">{{ form.id ? 'Edit' : 'Create' }} Device</div>
+          <div class="text-h6">{{ isReadOnly && form.id ? 'View' : form.id ? 'Edit' : 'Create' }} Device</div>
         </q-card-section>
 
         <q-card-section v-if="errorMessage" class="bg-negative text-white">
@@ -52,6 +56,7 @@
                   dense
                   outlined
                   dark
+                  :disable="isReadOnly"
                   :rules="[val => !!val || 'Name is required']"
                 />
                 <q-input
@@ -60,6 +65,7 @@
                   dense
                   outlined
                   dark
+                  :disable="isReadOnly"
                   :rules="[
                     val => !!val || 'MAC Address is required',
                     val => isValidMac(val) || 'Invalid MAC format'
@@ -77,6 +83,7 @@
                   emit-value
                   map-options
                   color="teal"
+                  :disable="isReadOnly"
                   :rules="[val => val !== null || 'Device Type is required']"
                 />
                 <q-select
@@ -91,6 +98,7 @@
                   emit-value
                   map-options
                   color="teal"
+                  :disable="isReadOnly"
                   :rules="[val => val !== null || 'Site is required']"
                 />
               </q-card-section>
@@ -122,6 +130,7 @@
                   outlined
                   dark
                   color="teal"
+                  :disable="isReadOnly"
                   :rules="lineIdx === 1 ? [val => val !== null || 'Line 1 is required'] : []"
                 />
               </q-card-section>
@@ -149,6 +158,7 @@
                       outlined
                       dense
                       dark
+                      :disable="isReadOnly"
                       :hint="option.mandatory ? 'Required' : 'Optional'"
                       :rules="option.mandatory ? [val => !!val || `${option.friendlyName} is required`] : []"
                     />
@@ -162,6 +172,7 @@
                       outlined
                       dense
                       dark
+                      :disable="isReadOnly"
                       :hint="option.mandatory ? 'Required' : 'Optional'"
                       :rules="option.mandatory ? [val => val !== null && val !== '' || `${option.friendlyName} is required`] : []"
                     />
@@ -175,9 +186,25 @@
                       outlined
                       dense
                       dark
-                      :hint="option.mandatory ? 'Required' : 'Optional'"
-                      :rules="option.mandatory ? [val => !!val || `${option.friendlyName} is required`] : []"
-                    />
+                      :disable="isReadOnly"
+                      :placeholder="form.id ? '••••••••' : ''"
+                      @update:model-value="onPasswordFieldChange(option.optionId, $event)"
+                      :rules="option.mandatory && !form.id ? [val => !!val || `${option.friendlyName} is required`] : []"
+                    >
+                      <template v-slot:append>
+                        <q-icon v-if="passwordFieldsChanged[option.optionId]" name="warning" color="orange">
+                          <q-tooltip>Password will be changed</q-tooltip>
+                        </q-icon>
+                      </template>
+                      <template v-slot:hint>
+                        <span v-if="form.id && !passwordFieldsChanged[option.optionId]" class="text-grey-6">
+                          Leave blank to keep current password
+                        </span>
+                        <span v-if="form.id && passwordFieldsChanged[option.optionId]" class="text-orange" style="font-weight: 500;">
+                          <q-icon name="warning" size="xs" /> Password will be changed
+                        </span>
+                      </template>
+                    </q-input>
 
                     <!-- Select/Dropdown -->
                     <q-select
@@ -191,6 +218,7 @@
                       emit-value
                       map-options
                       color="teal"
+                      :disable="isReadOnly"
                       :hint="option.mandatory ? 'Required' : 'Optional'"
                       :rules="option.mandatory ? [val => val !== null && val !== '' || `${option.friendlyName} is required`] : []"
                     />
@@ -202,6 +230,7 @@
                       :label="option.friendlyName"
                       dense
                       color="teal"
+                      :disable="isReadOnly"
                     />
 
                     <!-- Textarea -->
@@ -214,6 +243,7 @@
                       rows="3"
                       dense
                       dark
+                      :disable="isReadOnly"
                       :hint="option.mandatory ? 'Required' : 'Optional'"
                       :rules="option.mandatory ? [val => !!val || `${option.friendlyName} is required`] : []"
                     />
@@ -229,11 +259,11 @@
                             <q-item
                               v-for="avail in availableDeviceChoices(option)"
                               :key="avail"
-                              clickable
-                              @click="moveDeviceToSelected(option.optionId, avail)"
+                              :clickable="!isReadOnly"
+                              @click="!isReadOnly && moveDeviceToSelected(option.optionId, avail)"
                             >
                               <q-item-section avatar>
-                                <q-icon name="chevron_right" color="teal" />
+                                <q-icon name="chevron_right" :color="isReadOnly ? 'grey' : 'teal'" />
                               </q-item-section>
                               <q-item-section class="text-white">{{ avail }}</q-item-section>
                             </q-item>
@@ -252,7 +282,7 @@
                               <q-item-section avatar>
                                 <div class="column q-gutter-xs">
                                   <q-btn
-                                    v-if="idx > 0"
+                                    v-if="idx > 0 && !isReadOnly"
                                     flat
                                     dense
                                     round
@@ -262,7 +292,7 @@
                                     @click="moveDeviceUpSelected(option.optionId, idx)"
                                   />
                                   <q-btn
-                                    v-if="idx < (deviceConfigValues[option.optionId] || []).length - 1"
+                                    v-if="idx < (deviceConfigValues[option.optionId] || []).length - 1 && !isReadOnly"
                                     flat
                                     dense
                                     round
@@ -276,6 +306,7 @@
                               <q-item-section class="text-white">{{ selected }}</q-item-section>
                               <q-item-section avatar>
                                 <q-btn
+                                  v-if="!isReadOnly"
                                   flat
                                   dense
                                   round
@@ -302,8 +333,8 @@
 
         <!-- Actions -->
         <q-card-actions align="right" class="q-pa-md">
-          <q-btn flat label="Cancel" color="primary" @click="handleCancel" />
-          <q-btn unelevated label="Save" color="positive" @click="save" :loading="saving" />
+          <q-btn flat :label="isReadOnly ? 'Close' : 'Cancel'" color="primary" @click="handleCancel" />
+          <q-btn v-if="!isReadOnly" unelevated label="Save" color="positive" @click="save" :loading="saving" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -345,7 +376,10 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
+import { useAuthStore } from '../stores/auth';
 import api from '../api';
+
+const authStore = useAuthStore();
 
 const devices = ref([]);
 const deviceTypes = ref([]);
@@ -365,6 +399,9 @@ const originalLines = ref(null);
 const originalConfig = ref(null);
 const lineDisassociationWarning = ref('');
 
+// Compute if user is read-only
+const isReadOnly = computed(() => authStore.user?.role === 'readonly');
+
 const emptyForm = () => ({
   id: null,
   name: '',
@@ -375,6 +412,7 @@ const emptyForm = () => ({
 const form = ref(emptyForm());
 const formLines = ref([]);
 const deviceConfigValues = ref({});
+const passwordFieldsChanged = ref({});
 const isValidMac = (val) => {
   if (!val) return false;
   const patterns = [
@@ -626,6 +664,7 @@ const openCreate = () => {
   form.value = emptyForm();
   formLines.value = [];
   deviceConfigValues.value = {};
+  passwordFieldsChanged.value = {};
   errorMessage.value = '';
   lineDisassociationWarning.value = '';
   originalForm.value = null;
@@ -635,10 +674,15 @@ const openCreate = () => {
   dialog.value = true;
 };
 
+const onPasswordFieldChange = (optionId, value) => {
+  passwordFieldsChanged.value[optionId] = form.value.id && value && value.length > 0;
+};
+
 const openEdit = async (row) => {
   form.value = { ...row };
   errorMessage.value = '';
   lineDisassociationWarning.value = '';
+  passwordFieldsChanged.value = {};
   
   // Wait for selectedDeviceType to compute
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -659,6 +703,17 @@ const openEdit = async (row) => {
   
   // Load device-specific configuration
   deviceConfigValues.value = row.device_specific_configuration || {};
+  
+  // Clear password fields for security - user must enter new ones if they want to change them
+  if (selectedDeviceType.value?.deviceSpecificOptions?.sections) {
+    selectedDeviceType.value.deviceSpecificOptions.sections.forEach(section => {
+      section.options?.forEach(option => {
+        if (option.type === 'password') {
+          deviceConfigValues.value[option.optionId] = '';
+        }
+      });
+    });
+  }
   
   // Track original state for changes detection
   originalForm.value = JSON.parse(JSON.stringify(form.value));
@@ -700,11 +755,28 @@ const save = async () => {
   saving.value = true;
   try {
     form.value.mac_address = normalizeMac(form.value.mac_address);
+    
+    // Prepare device config, removing password fields that haven't been changed
+    const configToSend = { ...deviceConfigValues.value };
+    if (form.value.id) {
+      Object.keys(configToSend).forEach(key => {
+        if (!passwordFieldsChanged.value[key]) {
+          // Check if this is a password field that wasn't changed
+          const isPasswordField = selectedDeviceType.value?.deviceSpecificOptions?.sections?.some(section =>
+            section.options?.some(opt => opt.optionId === key && opt.type === 'password')
+          );
+          if (isPasswordField && (!configToSend[key] || configToSend[key] === '')) {
+            delete configToSend[key];
+          }
+        }
+      });
+    }
+    
     const payload = {
       ...form.value,
       line_1: formLines.value[0],
       lines: formLines.value.slice(1).filter(v => v !== null && v !== undefined),
-      device_specific_configuration: deviceConfigValues.value
+      device_specific_configuration: configToSend
     };
     
     if (payload.id) {
@@ -713,6 +785,7 @@ const save = async () => {
       await api.post('/devices/', payload);
     }
     dialog.value = false;
+    passwordFieldsChanged.value = {};
     await loadDevices();
   } catch (error) {
     errorMessage.value = extractErrorMessage(error);

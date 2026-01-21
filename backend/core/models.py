@@ -5,6 +5,7 @@
 
 These models mirror the frontend-oriented structure described in the build prompt.
 """
+from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
@@ -28,6 +29,28 @@ mac_validator = RegexValidator(
     regex=r"^[0-9A-Fa-f]{2}([:-]?[0-9A-Fa-f]{2}){5}$",
     message="MAC address must be 12 hex characters (colon or dash optional)",
 )
+
+
+class UserProfile(models.Model):
+    """Extended user profile for role-based access control and SSO integration."""
+    
+    ROLE_ADMIN = 'admin'
+    ROLE_READONLY = 'readonly'
+    ROLE_CHOICES = [
+        (ROLE_ADMIN, 'Administrator'),
+        (ROLE_READONLY, 'Read Only'),
+    ]
+    
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_READONLY)
+    is_sso = models.BooleanField(default=False, help_text="True if user authenticates via SAML SSO")
+    force_password_reset = models.BooleanField(default=False, help_text="User must change password on next login")
+    
+    class Meta:
+        ordering = ['user__username']
+    
+    def __str__(self) -> str:
+        return f"{self.user.username} ({self.get_role_display()})"
 
 
 class SIPServer(models.Model):
