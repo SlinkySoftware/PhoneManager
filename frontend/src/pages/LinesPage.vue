@@ -18,6 +18,7 @@
       row-key="id"
       :loading="loading"
       no-data-label="No lines yet"
+      :pagination="{ rowsPerPage: 20, rowsPerPageOptions: [20, 50, 100, 0] }"
     >
       <template #body-cell-is_shared="props">
         <q-td>{{ props.value ? 'Yes' : 'No' }}</q-td>

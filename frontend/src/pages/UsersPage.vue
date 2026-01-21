@@ -32,6 +32,7 @@
       :loading="loading"
       flat
       bordered
+      :pagination="{ rowsPerPage: 20, rowsPerPageOptions: [20, 50, 100, 0] }"
     >
       <template v-slot:body-cell-username="props">
         <q-td :props="props">

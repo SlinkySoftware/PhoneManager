@@ -18,6 +18,7 @@
       row-key="id"
       :loading="loading"
       no-data-label="No SIP servers yet"
+      :pagination="{ rowsPerPage: 20, rowsPerPageOptions: [20, 50, 100, 0] }"
     >
       <template #body-cell-actions="props">
         <q-td align="right">

@@ -18,6 +18,7 @@
       row-key="id"
       :loading="loading"
       no-data-label="No sites yet"
+      :pagination="{ rowsPerPage: 20, rowsPerPageOptions: [20, 50, 100, 0] }"
     >
       <template #body-cell-primary_sip_server="props">
         <q-td>{{ serverLabel(props.value) }}</q-td>
