@@ -7,11 +7,12 @@ from typing import Dict, List, Type
 from .device_types.base import DeviceType
 from .device_types.example_sip_phone import ExampleSIPPhone
 from .device_types.grandstream_ht812 import GrandstreamHT812
-
+from .device_types.yealink_sip_t33g import YealinkSIPT33G
 
 REGISTERED_TYPES: Dict[str, Type[DeviceType]] = {
     ExampleSIPPhone.TypeID: ExampleSIPPhone,
     GrandstreamHT812.TypeID: GrandstreamHT812,
+    YealinkSIPT33G.TypeID: YealinkSIPT33G,
 }
 
 
