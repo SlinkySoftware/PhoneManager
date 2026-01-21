@@ -437,6 +437,14 @@ const selectedDeviceType = computed(() => {
   return deviceTypes.value.find(dt => dt.typeId === form.value.device_type_id);
 });
 
+const deviceTypeNameById = computed(() => {
+  const map = {};
+  deviceTypes.value.forEach(dt => {
+    map[dt.typeId] = `${dt.manufacturer} ${dt.model}`;
+  });
+  return map;
+});
+
 const siteNameById = computed(() => {
   const map = {};
   sites.value.forEach(s => {
@@ -448,7 +456,7 @@ const siteNameById = computed(() => {
 const columns = [
   { name: 'name', label: 'Name', field: 'name', align: 'left', sortable: true },
   { name: 'mac_address', label: 'MAC Address', field: 'mac_address', align: 'left', sortable: true },
-  { name: 'device_type_id', label: 'Type', field: 'device_type_id', align: 'left', sortable: true },
+  { name: 'device_type_id', label: 'Type', field: 'device_type_id', format: val => deviceTypeNameById.value[val] || val, align: 'left', sortable: true },
   { name: 'site', label: 'Site', field: 'site', format: val => siteNameById.value[val] || val, align: 'left', sortable: true },
   {
     name: 'line_directory_numbers',
