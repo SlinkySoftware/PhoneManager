@@ -141,6 +141,7 @@ class Device(models.Model):
     lines = models.ManyToManyField(Line, related_name="devices", blank=True)
     device_specific_configuration = models.JSONField(default=dict, blank=True)
     enabled = models.BooleanField(default=True)
+    last_provisioned_at = models.DateTimeField(null=True, blank=True, help_text="Last time device configuration was requested")
 
     class Meta:
         ordering = ["mac_address"]

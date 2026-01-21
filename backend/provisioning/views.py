@@ -5,6 +5,7 @@
 from typing import Any, Dict
 
 from django.http import Http404, HttpResponse
+from django.utils import timezone
 from rest_framework import permissions, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -75,4 +76,9 @@ class ProvisioningViewSet(viewsets.ViewSet):
             DeviceSpecificOptions=device_type_cls.DeviceSpecificOptions,
         )
         config_text = renderer.render(device)
+        
+        # Update last provisioned timestamp
+        device.last_provisioned_at = timezone.now()
+        device.save(update_fields=['last_provisioned_at'])
+        
         return HttpResponse(config_text, content_type="text/plain")

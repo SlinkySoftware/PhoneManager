@@ -447,15 +447,24 @@ const siteNameById = computed(() => {
 
 const columns = [
   { name: 'name', label: 'Name', field: 'name', align: 'left', sortable: true },
-  { name: 'mac_address', label: 'MAC Address', field: 'mac_address', align: 'left' },
-  { name: 'device_type_id', label: 'Type', field: 'device_type_id', align: 'left' },
-  { name: 'site', label: 'Site', field: 'site', format: val => siteNameById.value[val] || val, align: 'left' },
+  { name: 'mac_address', label: 'MAC Address', field: 'mac_address', align: 'left', sortable: true },
+  { name: 'device_type_id', label: 'Type', field: 'device_type_id', align: 'left', sortable: true },
+  { name: 'site', label: 'Site', field: 'site', format: val => siteNameById.value[val] || val, align: 'left', sortable: true },
   {
     name: 'line_directory_numbers',
-    label: 'Directory Numbers',
+    label: 'DNs',
     field: row => row.line_directory_numbers || [],
     format: val => (val || []).join(', '),
-    align: 'left'
+    align: 'left',
+    sortable: true
+  },
+  {
+    name: 'last_provisioned_at',
+    label: 'Last Config Time',
+    field: 'last_provisioned_at',
+    format: val => val ? new Date(val).toLocaleString() : 'Never',
+    align: 'left',
+    sortable: true
   },
   { name: 'actions', label: 'Actions', field: 'actions', align: 'right' }
 ];
@@ -551,7 +560,7 @@ const lineOptions = (index) => {
     })
     .map(line => ({
       ...line,
-      label: `${line.name} (${line.directory_number})`
+      label: `${line.name} (${line.directory_number})${line.is_shared ? ' [Shared]' : ''}`
     }));
 };
 

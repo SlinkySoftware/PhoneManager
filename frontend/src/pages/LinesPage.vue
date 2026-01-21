@@ -152,9 +152,9 @@ const form = ref(emptyForm());
 
 const columns = [
   { name: 'name', label: 'Name', field: 'name', align: 'left', sortable: true },
-  { name: 'directory_number', label: 'Directory Number', field: 'directory_number', align: 'left' },
-  { name: 'registration_account', label: 'Reg Account', field: 'registration_account', align: 'left' },
-  { name: 'is_shared', label: 'Shared', field: 'is_shared', align: 'left' },
+  { name: 'directory_number', label: 'Directory Number', field: 'directory_number', align: 'left', sortable: true },
+  { name: 'registration_account', label: 'Reg Account', field: 'registration_account', align: 'left', sortable: true },
+  { name: 'is_shared', label: 'Shared', field: 'is_shared', align: 'left', sortable: true },
   { name: 'actions', label: 'Actions', field: 'actions', align: 'right' }
 ];
 
