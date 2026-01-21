@@ -128,7 +128,7 @@ const handleLogin = async () => {
       router.push('/change-password');
     } else {
       // Redirect to dashboard
-      router.push('/device-types');
+      router.push('/devices');
     }
   } catch (error) {
     if (error.response?.status === 401) {
@@ -169,7 +169,7 @@ onMounted(async () => {
       authStore.setToken(token);
       
       // For SSO, we'll redirect and let the app fetch user info
-      router.push('/device-types');
+      router.push('/devices');
     } catch (error) {
       errorMessage.value = 'SSO login failed. Please try again.';
     }

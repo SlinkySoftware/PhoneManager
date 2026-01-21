@@ -16,7 +16,7 @@ import UserSettingsPage from '../pages/UserSettingsPage.vue';
 const routes = [
   { path: '/login', component: LoginPage, meta: { requiresAuth: false } },
   { path: '/change-password', component: ChangePasswordPage, meta: { requiresAuth: true } },
-  { path: '/', redirect: '/device-types', meta: { requiresAuth: true } },
+  { path: '/', redirect: '/devices', meta: { requiresAuth: true } },
   { path: '/device-types', component: DeviceTypesPage, meta: { requiresAuth: true } },
   { path: '/devices', component: DevicesPage, meta: { requiresAuth: true } },
   { path: '/sip-servers', component: SIPServersPage, meta: { requiresAuth: true } },
@@ -46,7 +46,7 @@ router.beforeEach((to, from, next) => {
     next('/login');
   } else if (to.path === '/login' && isAuthenticated) {
     // Redirect to home if already authenticated and trying to access login
-    next('/device-types');
+    next('/devices');
   } else if (requiresAdmin && user?.role !== 'admin') {
     // Redirect non-admin users away from admin-only pages
     next('/device-types');
