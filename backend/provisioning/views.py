@@ -89,6 +89,7 @@ class ProvisioningViewSet(viewsets.ViewSet):
             NumberOfLines=device_type_cls.NumberOfLines,
             CommonOptions=device_type_cls.CommonOptions,
             DeviceSpecificOptions=device_type_cls.DeviceSpecificOptions,
+            ContentType=device_type_cls.ContentType,
         )
         config_text = renderer.render(decrypted_device)
         
@@ -96,4 +97,4 @@ class ProvisioningViewSet(viewsets.ViewSet):
         device.last_provisioned_at = timezone.now()
         device.save(update_fields=['last_provisioned_at'])
         
-        return HttpResponse(config_text, content_type="text/plain")
+        return HttpResponse(config_text, content_type=renderer.ContentType)

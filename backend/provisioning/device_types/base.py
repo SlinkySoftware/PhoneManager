@@ -17,6 +17,7 @@ class DeviceType:
     NumberOfLines: int
     CommonOptions: Dict[str, Any]
     DeviceSpecificOptions: Dict[str, Any]
+    ContentType: str = "text/plain"  # HTTP Content-Type for rendered configuration
 
     def render(self, device: Any) -> str:
         """Render configuration text for a fully-populated Device instance."""

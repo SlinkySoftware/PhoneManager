@@ -330,6 +330,7 @@ class YealinkSIPT33G(DeviceType):
     NumberOfLines = 4
     CommonOptions = COMMON_OPTIONS
     DeviceSpecificOptions = DEVICE_OPTIONS
+    ContentType = "text/plain"
 
     def render(self, device: Any) -> str:
         # Pull decrypted device-specific configuration (includes admin password)

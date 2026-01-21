@@ -197,11 +197,17 @@ def destroy(self, request, *args, **kwargs):
 - Handle MAC address normalization (case-insensitive, : vs - separators)
 
 ### Renderer System (phoneprov/provisioning/renderers/)
-- Each vendor has a dedicated renderer class inheriting `BaseRenderer`
+- Each vendor has a dedicated renderer class inheriting `DeviceType`
 - Renderers MUST be deterministic (same input = same output)
 - Configuration generated from database only, no external files
 - Register new renderers in `RendererFactory.RENDERERS`
-- Each renderer defines `CommonOptions` schema describing UI fields for that device type
+- Each renderer defines:
+  - `TypeID` - Unique identifier for the device type
+  - `Manufacturer` - Display name of vendor
+  - `Model` - Display name of model
+  - `NumberOfLines` - Maximum concurrent calls supported
+  - `ContentType` - HTTP content-type for rendered output (e.g., `"text/xml"`, `"text/plain"`)
+  - `CommonOptions` - JSON schema describing UI fields for user configuration
 
 #### CommonOptions JSON Schema
 
@@ -248,6 +254,11 @@ from phoneprov.api.models import Device
 class CiscoRenderer(BaseRenderer):
     """Configuration renderer for Cisco SIP devices."""
     
+    TypeID = "CiscoSIPPhone"
+    Manufacturer = "Cisco"
+    Model = "CP-7841"
+    NumberOfLines = 4
+    
     # Define configuration UI schema
     CommonOptions = {
         "sections": [
@@ -268,15 +279,18 @@ class CiscoRenderer(BaseRenderer):
         ]
     }
     
+    # HTTP Content-Type for rendered configuration
+    # Set based on configuration format:
+    # - "text/xml" for XML-based configs (Grandstream, Cisco, etc.)
+    # - "text/plain" for key=value or ini-format configs (Yealink, Polycom, etc.)
+    ContentType = "text/xml"
+    
     def render(self, device: Device) -> str:
-        self._reset()
-        self._add_comment(f"Config for {device.friendly_name}")
-        
         # Get user-configured options
         sip_server = device.device_specific_configuration.get("sip_server_1", "")
         
-        # ... generate config
-        return self.config
+        # ... generate config based on ContentType
+        return config_xml
 ```
 
 ---

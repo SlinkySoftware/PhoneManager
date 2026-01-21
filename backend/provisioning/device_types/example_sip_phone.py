@@ -63,6 +63,7 @@ class ExampleSIPPhone(DeviceType):
     NumberOfLines = 2
     CommonOptions = EXAMPLE_COMMON_OPTIONS
     DeviceSpecificOptions = EXAMPLE_DEVICE_OPTIONS
+    ContentType = "text/plain"
 
     def render(self, device: Any) -> str:
         """Simple renderer emitting deterministic key=value config."""
