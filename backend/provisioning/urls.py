@@ -9,5 +9,8 @@ from .views import ProvisioningViewSet
 provision_view = ProvisioningViewSet.as_view({"get": "retrieve"})
 
 urlpatterns = [
-    path("<str:pk>/", provision_view, name="provision-device"),
+    path("cfg<str:pk>.xml", provision_view, name="provision-device"),
+    path("<str:pk>.cfg", provision_view, name="provision-device"),
+    path("<str:pk>", provision_view, name="provision-device"),
+   
 ]
