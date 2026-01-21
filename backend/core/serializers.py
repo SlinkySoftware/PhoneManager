@@ -21,6 +21,17 @@ class SiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Site
         fields = "__all__"
+        extra_kwargs = {
+            "primary_ntp_ip": {"allow_blank": True, "allow_null": True, "required": False},
+            "secondary_ntp_ip": {"allow_blank": True, "allow_null": True, "required": False},
+        }
+
+    def validate(self, attrs):
+        # Normalize empty IP strings to None so optional NTP fields stay truly optional
+        for field in ("primary_ntp_ip", "secondary_ntp_ip"):
+            if attrs.get(field) == "":
+                attrs[field] = None
+        return super().validate(attrs)
 
 
 class LineSerializer(serializers.ModelSerializer):
