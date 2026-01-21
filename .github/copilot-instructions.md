@@ -356,10 +356,62 @@ export const deviceService = {
 ## Security Guidelines
 
 ### Authentication & Authorization
-- All API endpoints except `/provisioning/*` require authentication
+
+**Authentication Methods:**
+- **Local Users:** Username/password stored in Django's auth system
+- **SAML SSO:** Single Sign-On via SAML 2.0 (Microsoft Entra, Okta, etc.)
 - JWT tokens expire after 1 hour (refresh tokens after 7 days)
 - Passwords stored with Django's PBKDF2 hasher (default)
 - Never log passwords or tokens
+
+**Role-Based Access Control:**
+
+The system implements two user roles with different permission levels:
+
+| Role | Access Level | API Permissions | UI Behavior |
+|------|--------------|-----------------|-------------|
+| **Admin** | Full CRUD access | All HTTP methods (GET, POST, PUT, PATCH, DELETE) | All buttons/forms enabled; Users page accessible; Edit/Delete buttons visible |
+| **Read Only** | View-only access | Only safe methods (GET, HEAD, OPTIONS) | Add/Edit/Delete buttons hidden; Users page hidden; Orange "Read Only Mode" badge; View button with eye icon |
+
+**Permission Classes:**
+
+- `IsAuthenticated` - Requires valid JWT token (both roles can access)
+  - Used for: Read endpoints (GET requests)
+  
+- `IsAdmin` - Requires `role='admin'` in UserProfile
+  - Used for: User management page, admin-only actions
+  
+- `IsAdminOrReadOnly` - Allows read for all authenticated users, write only for admins
+  - Used for: All resource ViewSets (Devices, Lines, Sites, SIPServers, DeviceTypeConfig)
+  - Implementation checks `request.method in SAFE_METHODS` for read-only users
+  - POST/PUT/PATCH/DELETE requests from read-only users return **HTTP 403 Forbidden**
+
+**API Enforcement:**
+
+All protected endpoints must use appropriate permission classes:
+
+```python
+from core.permissions import IsAdminOrReadOnly
+
+class DeviceViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAdminOrReadOnly]  # Read for all, write for admin only
+    # ... rest of viewset
+```
+
+**Frontend Enforcement:**
+
+- Read-only mode detected via: `authStore.user?.role !== 'admin'`
+- All form fields: `:disable="isReadOnly"` to prevent editing
+- Action buttons conditionally rendered based on role
+- View button (eye icon) replaces Edit button for read-only users
+- Save/Delete operations hidden when `isReadOnly === true`
+
+**User Self-Protection:**
+
+Users cannot modify their own accounts to prevent privilege loss:
+- Edit/Reset Password/Delete buttons hidden for current user
+- Comparison: `props.row.username === authStore.currentUser?.username`
+- "You" chip displayed next to current user's username in Users table
 
 ### Provisioning Endpoint Security
 - Provisioning endpoints are **intentionally unauthenticated** (phones identify by MAC)

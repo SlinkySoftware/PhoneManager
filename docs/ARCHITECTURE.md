@@ -76,6 +76,8 @@ DeviceTypeConfig
 
 UserProfile
 ├── user (OneToOne → auth.User)
+├── first_name (CharField: User's first name)
+├── last_name (CharField: User's last name)
 ├── role (CharField: 'admin' or 'readonly')
 ├── is_sso (BooleanField: SSO vs local authentication)
 ├── force_password_reset (BooleanField: requires password change)
@@ -142,6 +144,35 @@ Frontend extracts token and stores in localStorage
 Two user roles with different permissions:
 
 | Role | Access Level | UI Behavior | API Enforcement |
+|------|--------------|-------------|------------------|
+| **Admin** | Full CRUD access to all resources | All buttons/forms enabled; Users page accessible; View button shows "Edit" | All HTTP methods allowed on protected endpoints |
+| **Read Only** | View-only access to all resources | Add/Edit/Delete buttons hidden; Users page hidden; Orange "Read Only Mode" badge shown; View button with eye icon allows viewing disabled forms | Only GET/HEAD/OPTIONS allowed; POST/PUT/PATCH/DELETE return 403 Forbidden |
+
+#### Read-Only Viewing Mode
+
+Read-only users can view complete configuration details through a "View" mode:
+- **View Button**: Eye icon replaces Edit button for read-only users
+- **Dialog Title**: Shows "View" instead of "Edit" when opened by read-only user
+- **All Fields Disabled**: Form inputs are visible but cannot be modified (greyed out)
+- **No Save Button**: Only "Close" button is available, not "Save"
+- **Applies To**: All data pages (Devices, Lines, Sites, SIP Servers, Device Types)
+- **Includes**: Device-specific configuration options and ordered multi-select fields
+
+### Password Security
+
+Password fields implement security best practices:
+- **Blank on View**: When editing existing records, password fields show placeholder "••••••••" instead of actual values
+- **Change Detection**: System tracks if password field has been modified
+- **Visual Indicators**: Orange warning icon and "Password will be changed" message when modification detected
+- **Conditional Updates**: API only updates passwords if user entered new value
+- **Helper Text**: Shows "Leave blank to keep current password" for existing records
+- **Applies To**: Lines (registration_password), Devices (device-specific password fields)
+
+### Role-Based Access Control
+
+Two user roles with different permissions:
+
+| Role | Access Level | UI Behavior | API Enforcement |
 |------|--------------|-------------|-----------------|
 | **Admin** | Full CRUD access to all resources | All buttons/forms enabled; Users page accessible | All HTTP methods allowed on protected endpoints |
 | **Read Only** | View-only access to all resources | Add/Edit/Delete buttons hidden; Users page hidden; Orange "Read Only Mode" badge shown | Only GET/HEAD/OPTIONS allowed; POST/PUT/PATCH/DELETE return 403 Forbidden |
@@ -170,13 +201,24 @@ Two user roles with different permissions:
 
 **Admin-Only Capabilities:**
 - Create new local users (generates 16-character temporary password)
+- Edit existing users (change full name, email, role, force password reset)
 - Reset user passwords (generates new temporary password)
 - Delete/deactivate users (SSO users are deactivated, local users are deleted)
 - View all users with role and authentication type
+- **Self-Protection**: Cannot edit, reset password, or delete own account
 
 **All Users:**
 - Change their own password (local users only)
 - View their account information
+- See "You" chip next to their username in Users table
+
+**User Interface Features:**
+- Full Name field (first_name + last_name) displayed in user listings
+- Edit User dialog for updating user details without changing password
+- Force Password Reset checkbox (requires password change on next login)
+- "You" chip indicator for current user in table
+- Orange badges for "Local" and "Read Only" designations
+- Action buttons hidden for current user (prevents self-modification)
 
 **Temporary Password System:**
 - New users receive a temporary password (displayed once)
@@ -314,6 +356,15 @@ class DeviceType:
 - **Components**: Reusable UI elements (tables, dialogs, forms)
 - **Stores**: Pinia stores for auth state and session
 - **Services**: API client modules with Axios
+- **Default Landing Page**: Devices page after login
+
+### Table Features
+- **Pagination**: Default 20 items per page
+- **Per-Page Options**: 20, 50, 100, All
+- **Sortable Columns**: Click headers to sort
+- **Loading States**: Progress indicators during data fetch
+- **Action Buttons**: Context-aware based on user role (Edit/View/Delete)
+- **Row Selection**: Unique ID-based selection
 
 ### Form Patterns
 - Real-time validation with error messages
@@ -321,6 +372,19 @@ class DeviceType:
 - Confirmation dialogs for destructive operations
 - Proper error extraction and display
 - Loading states during async operations
+- **Password Security**: Blank placeholder fields ("••••••••"), change tracking with visual warnings
+- **Read-Only Mode**: Disabled fields, "View" title, no Save button, Close instead of Cancel
+
+### UI/UX Conventions
+- **Color Coding**:
+  - Primary (blue): Admin role, primary actions
+  - Orange: Read Only role, Local auth type, password change warnings
+  - Info (cyan): SSO auth type, "You" chip for current user
+  - Teal/Green: Device configuration sections, success states
+  - Negative (red): Delete actions, error messages
+- **User Identification**: "You" chip displayed next to current user's username
+- **Self-Protection**: Current user cannot modify their own account (no Edit/Reset/Delete buttons)
+- **Role Indicators**: Badges show Administrator/Read Only and SSO/Local
 
 ### State Management
 - **Auth Store**: JWT token, user info, login/logout

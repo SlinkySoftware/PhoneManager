@@ -212,12 +212,185 @@ All asynchronous operations must provide visual feedback:
 - Display **progress indicators** for long operations
 - Update **user expectations** about operation duration
 
-### 5. Form State Management
+### 5. Password Security
+
+Password fields must implement secure handling practices:
+- **Blank on View**: Show placeholder "••••••••" instead of actual values when editing
+- **Change Detection**: Track if password field has been modified with reactive variable
+- **Visual Indicators**: Display orange warning icon and "Password will be changed" message
+- **Conditional Updates**: Only send password to API if user entered new value
+- **Helper Text**: Show context-appropriate hints
+  - Grey "Leave blank to keep current password" when unchanged
+  - Orange "Password will be changed" with warning icon when modified
+
+#### Implementation Pattern
+
+```vue
+<script setup>
+const passwordChanged = ref(false);
+
+const onPasswordChange = (value) => {
+  passwordChanged.value = !!value;
+};
+
+const openEdit = (row) => {
+  form.value = { ...row };
+  form.value.registration_password = '';  // Clear password
+  passwordChanged.value = false;
+  dialog.value = true;
+};
+
+const save = async () => {
+  const payload = { ...form.value };
+  
+  // Remove password if not changed
+  if (form.value.id && !passwordChanged.value) {
+    delete payload.registration_password;
+  }
+  
+  await api.patch(`/endpoint/${form.value.id}/`, payload);
+};
+</script>
+
+<template>
+  <q-input
+    v-model="form.registration_password"
+    label="Registration Password"
+    type="password"
+    :placeholder="form.id ? '••••••••' : ''"
+    @update:model-value="onPasswordChange"
+    :rules="form.id ? [] : [val => !!val || 'Password is required']"
+  >
+    <template v-slot:append>
+      <q-icon v-if="passwordChanged" name="warning" color="orange">
+        <q-tooltip>Password will be changed</q-tooltip>
+      </q-icon>
+    </template>
+    <template v-slot:hint>
+      <span v-if="form.id && !passwordChanged" class="text-grey-6">
+        Leave blank to keep current password
+      </span>
+      <span v-if="form.id && passwordChanged" class="text-orange" style="font-weight: 500;">
+        <q-icon name="warning" size="xs" /> Password will be changed
+      </span>
+    </template>
+  </q-input>
+</template>
+```
+
+### 6. Read-Only Viewing Mode
+
+Read-only users must be able to view but not modify configuration:
+- **View Button**: Show eye icon instead of edit icon for read-only users
+- **Dialog Title**: Display "View" instead of "Edit" for read-only mode
+- **Disable All Inputs**: Add `:disable="isReadOnly"` to all form fields
+- **Hide Save Button**: Only show "Close" button in read-only mode
+- **Change Button Labels**: "Cancel" becomes "Close" in read-only mode
+
+#### Implementation Pattern
+
+```vue
+<script setup>
+import { computed } from 'vue';
+import { useAuthStore } from '../stores/auth';
+
+const authStore = useAuthStore();
+const isReadOnly = computed(() => authStore.user?.role !== 'admin');
+</script>
+
+<template>
+  <!-- Table Actions -->
+  <template #body-cell-actions="props">
+    <q-td align="right">
+      <q-btn v-if="!isReadOnly" dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
+      <q-btn v-if="isReadOnly" dense flat icon="visibility" color="info" @click="openEdit(props.row)">
+        <q-tooltip>View</q-tooltip>
+      </q-btn>
+    </q-td>
+  </template>
+
+  <!-- Dialog -->
+  <q-dialog v-model="dialog">
+    <q-card>
+      <q-card-section class="text-h6">
+        {{ isReadOnly && form.id ? 'View' : form.id ? 'Edit' : 'Create' }} Item
+      </q-card-section>
+      <q-card-section class="q-gutter-md">
+        <q-input
+          v-model="form.name"
+          label="Name"
+          :disable="isReadOnly"
+          :rules="[val => !!val || 'Name is required']"
+        />
+        <!-- All other fields with :disable="isReadOnly" -->
+      </q-card-section>
+      <q-card-actions align="right">
+        <q-btn flat :label="isReadOnly ? 'Close' : 'Cancel'" color="primary" v-close-popup />
+        <q-btn v-if="!isReadOnly" unelevated label="Save" color="positive" @click="save" />
+      </q-card-actions>
+    </q-card>
+  </q-dialog>
+</template>
+```
+
+### 7. Form State Management
 
 - **Prevent unintended data loss** by clearing form only after successful save
 - **Show success messages** after successful operations
 - **Reset form state** after operations complete
 - **Handle loading states** on submit buttons during API calls
+
+### 8. User Management & Self-Protection
+
+Users should never be able to modify their own account to prevent accidental privilege loss or self-lockout:
+- **Hide Action Buttons**: Remove Edit/Reset Password/Delete buttons for current user
+- **Current User Identification**: Display "You" chip next to current user's username in table
+- **Comparison Method**: Use `authStore.currentUser?.username` to check if row is current user
+- **UI Indicators**: Info-colored chip with "You" text, positioned inline with username
+
+#### Implementation Pattern
+
+```vue
+<script setup>
+import { useAuthStore } from '../stores/auth';
+
+const authStore = useAuthStore();
+</script>
+
+<template>
+  <!-- Table Column: Username with "You" chip -->
+  <template #body-cell-username="props">
+    <q-td>
+      {{ props.row.username }}
+      <q-chip v-if="props.row.username === authStore.currentUser?.username" 
+              size="sm" 
+              color="info" 
+              text-color="white" 
+              class="q-ml-sm">
+        You
+      </q-chip>
+    </q-td>
+  </template>
+
+  <!-- Table Column: Actions with self-protection -->
+  <template #body-cell-actions="props">
+    <q-td align="right">
+      <template v-if="props.row.username !== authStore.currentUser?.username">
+        <q-btn dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
+        <q-btn dense flat icon="lock_reset" color="warning" @click="openResetPassword(props.row)" />
+        <q-btn dense flat icon="delete" color="negative" @click="openDelete(props.row)" />
+      </template>
+      <!-- No buttons shown for current user -->
+    </q-td>
+  </template>
+</template>
+```
+
+**Key Points:**
+- **Prevents Self-Modification**: Users cannot edit their own role, reset their own password, or delete themselves
+- **Fail-Safe Design**: No UI elements for self-modification = no accidental privilege loss
+- **Clear Identification**: "You" chip makes it obvious which user account is yours
+- **Applies To**: Users page only (other pages don't have user-specific restrictions)
 
 ---
 
@@ -246,6 +419,34 @@ All asynchronous operations must provide visual feedback:
 ### URL Fields
 - Must be valid URL format when provided
 - Protocol validation (http:// or https://)
+
+### Password Fields
+- Required for new records (unless explicitly optional)
+- Optional for updates (blank = no change)
+- Minimum 8 characters for new passwords
+- Visual feedback for password changes
+
+---
+
+## Table Configuration
+
+### Pagination
+All tables must implement consistent pagination:
+- **Default**: 20 rows per page
+- **Per-Page Options**: 20, 50, 100, All (0)
+- **No options below 20**: Prevents cluttered views with too many pagination controls
+
+#### Implementation Pattern
+
+```vue
+<q-table
+  :rows="data"
+  :columns="columns"
+  row-key="id"
+  :pagination="{ rowsPerPage: 20, rowsPerPageOptions: [20, 50, 100, 0] }"
+>
+</q-table>
+```
 
 ---
 
