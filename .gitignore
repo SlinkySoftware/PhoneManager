@@ -53,3 +53,7 @@ yarn-error.log*
 var/
 /var/
 *.pid.lock
+
+# Sonarqube work directory
+.scannerwork/
+
