@@ -70,6 +70,7 @@ class DeviceSerializer(serializers.ModelSerializer):
             "lines",
             "device_specific_configuration",
             "enabled",
+            "last_provisioned_at",
             "line_directory_numbers",
         ]
 
