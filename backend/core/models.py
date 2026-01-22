@@ -235,19 +235,29 @@ class Device(models.Model):
     
     def get_decrypted_device_config(self):
         """Get device-specific configuration with passwords decrypted.
-        
+
         Returns dict with password fields decrypted for use in rendering.
+        Merges DeviceTypeConfig common options (type-level defaults) with device-specific overrides.
         """
-        if not self.device_specific_configuration:
-            return {}
-        
         # Import here to avoid circular dependency
         from provisioning.registry import get_device_type
-        
+
         device_type_cls = get_device_type(self.device_type_id)
+
+        # Start with common options from DeviceTypeConfig (type-level configuration)
+        merged_config = {}
+        try:
+            device_type_config = DeviceTypeConfig.objects.get(type_id=self.device_type_id)
+            merged_config = device_type_config.get_decrypted_saved_values()
+        except DeviceTypeConfig.DoesNotExist:
+            pass
+
+        # If no device type class found, return merged config as-is
         if not device_type_cls:
-            return self.device_specific_configuration
-        
+            if self.device_specific_configuration:
+                merged_config.update(self.device_specific_configuration)
+            return merged_config
+
         # Identify password fields from DeviceSpecificOptions schema
         password_fields = set()
         device_specific_options = device_type_cls.DeviceSpecificOptions or {}
@@ -255,16 +265,16 @@ class Device(models.Model):
             for option in section.get('options', []):
                 if option.get('type') == 'password':
                     password_fields.add(option['optionId'])
-        
-        # Decrypt password fields
-        decrypted = {}
-        for key, value in self.device_specific_configuration.items():
-            if key in password_fields and value:
-                decrypted[key] = decrypt_password(value)
-            else:
-                decrypted[key] = value
-        
-        return decrypted
+
+        # Decrypt password fields from device-specific configuration and merge
+        if self.device_specific_configuration:
+            for key, value in self.device_specific_configuration.items():
+                if key in password_fields and value:
+                    merged_config[key] = decrypt_password(value)
+                else:
+                    merged_config[key] = value
+
+        return merged_config
     
     def set_encrypted_device_config(self, values: dict):
         """Set device-specific configuration with passwords encrypted.
