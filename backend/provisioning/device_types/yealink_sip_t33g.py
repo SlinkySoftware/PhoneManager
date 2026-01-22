@@ -118,9 +118,75 @@ COMMON_OPTIONS: Dict[str, Any] = {
                     "uiOrder": 12,
                 },	
 			]
-		},        {
-            "friendlyName": "RTP Parameters",
+		},
+        {
+            "friendlyName": "High Availability",
             "uiOrder": 2,
+            "options": [
+                {
+                    "optionId": "failover_type",
+                    "friendlyName": "Failover Type",
+                    "default": "Successive",
+                    "mandatory": False,
+                    "type": "select",
+                    "choices": ["Successive", "Concurrent"],
+                    "uiOrder": 1,
+                },
+                {
+                    "optionId": "failover_timeout",
+                    "friendlyName": "Failover Timeout (s)",
+                    "default": 30,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 2,
+                },
+                {
+                    "optionId": "register_on_active",
+                    "friendlyName": "Register on Active Server Only",
+                    "default": True,
+                    "mandatory": False,
+                    "type": "boolean",
+                    "uiOrder": 3,
+                },
+                {  
+                    "optionId": "signal_with_registered_only",
+                    "friendlyName": "Signal with Registered Server Only",
+                    "default": True,
+                    "mandatory": False,
+                    "type": "boolean",
+                    "uiOrder": 4,
+                },
+                {
+                    "optionId": "invite_retry_count",
+                    "friendlyName": "Invite Retry Count",
+                    "default": 3,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 5,
+                },
+                {
+                    "optionId": "failback_mode",
+                    "friendlyName": "Failback Mode",
+                    "default": "Duration",
+                    "mandatory": False,
+                    "type": "select",
+                    "choices": ["New Requests", "DNS TTL", "Registration", "Duration"],
+                    "uiOrder": 6,
+                },
+                { 
+                    "optionId": "failback_duration",
+                    "friendlyName": "Failback Duration (min)",
+                    "default": 10,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 7,
+                },
+                
+            ]
+        },
+        {
+            "friendlyName": "RTP Parameters",
+            "uiOrder": 3,
             "options": [
                 {
                     "optionId": "dtmf_type",
@@ -178,7 +244,7 @@ COMMON_OPTIONS: Dict[str, Any] = {
 		},		
         {
             "friendlyName": "Network",
-            "uiOrder": 3,
+            "uiOrder": 4,
             "options": [
                 {
                     "optionId": "network_port_http",
@@ -233,7 +299,7 @@ COMMON_OPTIONS: Dict[str, Any] = {
 		},
         {
             "friendlyName": "RTCP-XR (Voice Quality Report)",
-            "uiOrder": 4,
+            "uiOrder": 5,
             "options": [
                 {
                     "optionId": "vq_rtcp_xr_enable",
@@ -576,6 +642,9 @@ class YealinkSIPT33G(DeviceType):
             "DD MMM YYYY": 5,
             "WWW DD MMM": 6,
         }
+        redudancy_type_map = {"Successive": 1, "Concurrent": 0}
+        failback_mode_map = {"New Requests": 0, "DNS TTL": 1, "Registration": 2, "Duration": 3}
+        
 
         def normalize_codec_name(codec: Any) -> str:
             if not isinstance(codec, str):
@@ -632,6 +701,16 @@ class YealinkSIPT33G(DeviceType):
         cdp_active = bool(opt("cdp_active", False))
         dhcp_hostname = opt("dhcp_hostname", "yealink-" + device.mac_address.replace(":", "")[-6:])
 
+        # Failover
+        failover_type = opt("failover_type", "Successive")
+        failover_timeout = int(opt("failover_timeout", 30))
+        register_on_active = bool(opt("register_on_active", True))
+        signal_with_registered_only = bool(opt("signal_with_registered_only", True))
+        invite_retry_count = int(opt("invite_retry_count", 3))
+        failback_mode = opt("failback_mode", "Duration")
+        failback_duration = int(opt("failback_duration", 10)) * 60  # Convert minutes to seconds
+        
+        
 
         # VQ RTCP-XR
         vq_enable = bool(opt("vq_rtcp_xr_enable", False))
@@ -658,7 +737,7 @@ class YealinkSIPT33G(DeviceType):
         registration_random_seconds = int(opt("registration_random_seconds", 6))
         enable_user_equal_phone = bool(opt("enable_user_equal_phone", True))
         session_expires = int(opt("session_expires", 1800))
-        session_refresher = opt("session_refresher", "uas")
+        session_refresher = opt("session_refresher", "UAC")
         server_expires = int(opt("server_expires", 600))
 
 
@@ -851,6 +930,18 @@ class YealinkSIPT33G(DeviceType):
                     f"account.{idx}.register_mac = {bool_flag(send_mac)}",
                     f"account.{idx}.register_line = {bool_flag(send_line)}",
                     f"account.{idx}.hold_use_inactive = {bool_flag(hold_inactive)}",
+                    f"account.{idx}.fallback.redundancy_type = {redudancy_type_map.get(failover_type, 1)}",
+                    f"account.{idx}.fallback.timeout = {failover_timeout}",
+                    f"account.{idx}.sip_server.1.register_on_enable = {bool_flag(register_on_active)}",
+                    f"account.{idx}.sip_server.1.only_signal_with_registered = {bool_flag(signal_with_registered_only)}",
+                    f"account.{idx}.sip_server.1.invite_retry_counts = {invite_retry_count}",
+                    f"account.{idx}.sip_server.1.failback_mode = {failback_mode_map.get(failback_mode, 3)}",
+                    f"account.{idx}.sip_server.1.failback_timeout = {failback_duration}", 
+                    f"account.{idx}.sip_server.2.register_on_enable = {bool_flag(register_on_active) if secondary else ''}",
+                    f"account.{idx}.sip_server.2.only_signal_with_registered = {bool_flag(signal_with_registered_only) if secondary else ''}",
+                    f"account.{idx}.sip_server.2.invite_retry_counts = {invite_retry_count if secondary else ''}",
+                    f"account.{idx}.sip_server.2.failback_mode = {failback_mode_map.get(failback_mode, 3) if secondary else ''}",   
+                    f"account.{idx}.sip_server.2.failback_timeout = {failback_duration if secondary else ''}",
                 ]
             )
 
