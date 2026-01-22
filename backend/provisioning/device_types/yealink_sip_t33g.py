@@ -430,19 +430,24 @@ class YealinkSIPT33G(DeviceType):
         def bool_flag(value: Any) -> str:
             return "1" if bool(value) else "0"
 
-        def get_timezone_offset_and_dst(tz_name: str) -> tuple[float, int]:
+        def get_timezone_config(tz_name: str) -> dict[str, Any]:
             """
-            Calculate UTC offset and DST flag for a timezone.
-            Works correctly for both Northern and Southern Hemispheres.
+            Calculate Yealink timezone and DST configuration.
+            Returns dict with all required timezone parameters for Yealink phones.
             
-            Returns: (offset_hours: float, dst_flag: int)
-            - offset_hours: Standard time UTC offset without DST (-12 to +14)
-            - dst_flag: 0=no DST support, 1=DST currently active, 2=DST supported but not active
+            Yealink format:
+            - time_zone: Standard UTC offset as integer (e.g., +10, -5)
+            - summer_time: 0=no DST, 1=uses DST, 2=auto-detect
+            - dst_time_type: 1=DST by day-of-week (only supported mode)
+            - start_time: DST start as "month/week/dow/hour" (e.g., "10/1/7/2" = Oct 1st Sunday 2am)
+            - end_time: DST end as "month/week/dow/hour"
+            - offset_time: DST offset in minutes (typically 60)
+            - manual_ntp_srv_prior: 1 = use manual NTP servers
             """
             try:
                 tz = pytz.timezone(tz_name)
                 
-                # Sample two dates to detect DST pattern (use localize() for pytz)
+                # Sample two dates to detect DST pattern
                 jan_naive = datetime(2026, 1, 15, 12, 0, 0)
                 jul_naive = datetime(2026, 7, 15, 12, 0, 0)
                 
@@ -453,31 +458,108 @@ class YealinkSIPT33G(DeviceType):
                 jul_offset_hours = jul_date.utcoffset().total_seconds() / 3600
                 
                 # Standard time is the smaller offset (closer to UTC)
-                # DST adds an hour, so DST offset is larger
-                standard_offset = min(jan_offset_hours, jul_offset_hours)
-                dst_offset = max(jan_offset_hours, jul_offset_hours)
+                standard_offset_hours = min(jan_offset_hours, jul_offset_hours)
                 
                 # Check if timezone observes DST
                 observes_dst = (jan_offset_hours != jul_offset_hours)
                 
-                if not observes_dst:
-                    # Timezone doesn't observe DST
-                    return standard_offset, 0
-                else:
-                    # Timezone observes DST - check if currently active
-                    now_naive = datetime.now()
-                    now = tz.localize(now_naive)
-                    current_offset_hours = now.utcoffset().total_seconds() / 3600
+                config = {
+                    "time_zone": f"{int(standard_offset_hours):+d}",  # Format as +10, -5, etc.
+                    "summer_time": 1 if observes_dst else 0,  # 1=uses DST, 0=no DST
+                    "dst_time_type": 1 if observes_dst else 0,  # 1=DST by day-of-week
+                    "offset_time": 60 if observes_dst else 0,  # DST offset in minutes
+                    "manual_ntp_srv_prior": 1,  # Use manual NTP servers
+                }
+                
+                if observes_dst:
+                    # For timezones with DST, determine transition dates
+                    # Try to find the actual DST transitions using pytz transition info
+                    # Fallback: Use reasonable defaults for Northern/Southern hemisphere patterns
                     
-                    if abs(current_offset_hours - dst_offset) < 0.01:
-                        # Currently in DST period
-                        return standard_offset, 1
-                    else:
-                        # Currently in standard time
-                        return standard_offset, 2
+                    # Get the transition info from pytz
+                    import inspect
+                    try:
+                        # pytz stores transitions in _utc_transition_times
+                        transitions = tz._utc_transition_times
+                        trans_info = tz._transition_info
+                        
+                        # Find 2026 transitions (current and next)
+                        spring_trans = None  # Earlier transition (spring for NH, autumn for SH)
+                        autumn_trans = None  # Later transition (autumn for NH, spring for SH)
+                        
+                        for i, trans_time in enumerate(transitions):
+                            if trans_time.year == 2026:
+                                # This transition is in 2026
+                                trans_utc = trans_time
+                                next_offset = trans_info[i][0].total_seconds() / 3600
+                                
+                                # Determine if this is spring-forward or fall-back
+                                if i > 0:
+                                    prev_offset = trans_info[i - 1][0].total_seconds() / 3600
+                                    
+                                    if next_offset > prev_offset:  # Spring forward (DST starts)
+                                        spring_trans = trans_time
+                                    else:  # Fall back (DST ends)
+                                        autumn_trans = trans_time
+                        
+                        # If we found both transitions, use them
+                        if spring_trans and autumn_trans:
+                            # Ensure spring comes before autumn in the calendar year
+                            if spring_trans.month > autumn_trans.month:
+                                spring_trans, autumn_trans = autumn_trans, spring_trans
+                            
+                            config["start_time"] = format_dst_transition(spring_trans)
+                            config["end_time"] = format_dst_transition(autumn_trans)
+                        else:
+                            # Fallback: Use common patterns
+                            if standard_offset_hours > 0:  # Likely Northern Hemisphere
+                                config["start_time"] = "3/2/7/2"  # 2nd Sunday in March at 2am
+                                config["end_time"] = "11/1/7/2"   # 1st Sunday in November at 2am
+                            else:  # Likely Southern Hemisphere
+                                config["start_time"] = "10/1/7/2"  # 1st Sunday in October at 2am
+                                config["end_time"] = "4/1/7/3"     # 1st Sunday in April at 3am
+                    except (AttributeError, Exception):
+                        # Fallback if transition info unavailable
+                        if standard_offset_hours > 0:
+                            config["start_time"] = "3/2/7/2"
+                            config["end_time"] = "11/1/7/2"
+                        else:
+                            config["start_time"] = "10/1/7/2"
+                            config["end_time"] = "4/1/7/3"
+                
+                return config
             except Exception:
                 # Fallback to UTC if timezone parsing fails
-                return 0.0, 0
+                return {
+                    "time_zone": "+0",
+                    "summer_time": 0,
+                    "dst_time_type": 0,
+                    "offset_time": 0,
+                    "manual_ntp_srv_prior": 1,
+                    "start_time": "",
+                    "end_time": "",
+                }
+        
+        def format_dst_transition(dt: datetime) -> str:
+            """
+            Format a datetime as Yealink DST transition string: month/week/dow/hour
+            
+            month: 1-12
+            week: 1-5 (1=first, 2=second, etc.)
+            dow: 7=Sunday, 1=Monday, ..., 6=Saturday
+            hour: 0-23
+            
+            This function approximates the week number based on the date.
+            """
+            month = dt.month
+            day = dt.day
+            hour = dt.hour
+            dow = dt.weekday() + 1 if dt.weekday() < 6 else 7  # Convert Python weekday to Yealink (7=Sun)
+            
+            # Calculate week number (1-5) for this day of month
+            week = (day - 1) // 7 + 1
+            
+            return f"{month}/{week}/{dow}/{hour}"
 
         transport_map = {"UDP": 0, "TCP": 1, "TLS": 2}
         dtmf_map = {"RFC2833": 1, "SIP_INFO": 2, "Inband": 0, "RFC2833+SIP_INFO": 3}
@@ -668,19 +750,30 @@ class YealinkSIPT33G(DeviceType):
         )
 
         # Time / NTP
-        tz_offset, dst_flag = get_timezone_offset_and_dst(site.timezone)
+        tz_config = get_timezone_config(site.timezone)
         config_lines.extend(
             [
-                f"local_time.time_zone = {tz_offset}",
-                f"local_time.summer_time = {dst_flag}",
-                f"local_time.time_zone_name = {site.timezone}",
+                f"local_time.time_zone = {tz_config['time_zone']}",
+                f"local_time.summer_time = {tz_config['summer_time']}",
+                f"local_time.dst_time_type = {tz_config['dst_time_type']}",
                 f"local_time.ntp_server1 = {site.primary_ntp_ip or ''}",
                 f"local_time.ntp_server2 = {site.secondary_ntp_ip or ''}",
                 f"local_time.interval = {ntp_interval}",
                 f"local_time.date_format = {dateformat_map.get(local_date_format, 5)}",
                 f"local_time.time_format = {timeformat_map.get(local_time_format, 1)}",
+                f"local_time.offset_time = {tz_config['offset_time']}",
+                f"local_time.manual_ntp_srv_prior = {tz_config['manual_ntp_srv_prior']}",
             ]
         )
+        
+        # Add DST transition times if applicable
+        if tz_config.get('start_time') and tz_config.get('end_time'):
+            config_lines.extend(
+                [
+                    f"local_time.start_time = {tz_config['start_time']}",
+                    f"local_time.end_time = {tz_config['end_time']}",
+                ]
+            )
 
         # DHCP Hostname
         if dhcp_hostname:
