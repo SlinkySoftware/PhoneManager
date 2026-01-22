@@ -110,6 +110,12 @@ class Site(models.Model):
 
 class Line(models.Model):
     name = models.CharField(max_length=128)
+    phone_label = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        help_text="Label displayed on device screens",
+    )
     directory_number = models.CharField(max_length=32)
     registration_account = models.CharField(max_length=64)
     registration_password = EncryptedCharField(max_length=512)  # Encrypted storage, decrypted on access

@@ -51,6 +51,14 @@
             :rules="[val => !!val || 'Name is required']"
           />
           <q-input
+            v-model="form.phone_label"
+            label="Phone Label"
+            dense
+            outlined
+            :disable="isReadOnly"
+            :rules="[val => (val || '').length <= 128 || 'Max 128 characters']"
+          />
+          <q-input
             v-model="form.directory_number"
             label="Directory Number (+E164)"
             dense
@@ -143,6 +151,7 @@ const passwordChanged = ref(false);
 const emptyForm = () => ({
   id: null,
   name: '',
+  phone_label: '',
   directory_number: '',
   registration_account: '',
   registration_password: '',
@@ -152,6 +161,7 @@ const form = ref(emptyForm());
 
 const columns = [
   { name: 'name', label: 'Name', field: 'name', align: 'left', sortable: true },
+  { name: 'phone_label', label: 'Phone Label', field: 'phone_label', align: 'left', sortable: true },
   { name: 'directory_number', label: 'Directory Number', field: 'directory_number', align: 'left', sortable: true },
   { name: 'registration_account', label: 'Reg Account', field: 'registration_account', align: 'left', sortable: true },
   { name: 'is_shared', label: 'Shared', field: 'is_shared', align: 'left', sortable: true },

@@ -894,11 +894,13 @@ class YealinkSIPT33G(DeviceType):
         # Per-account rendering
         for idx, line in enumerate(lines, start=1):
 
+            line_label = getattr(line, "phone_label", "") or line.name
+
             config_lines.extend(
                 [
                     f"account.{idx}.enable = 1",
                     f"account.{idx}.unregister_on_reboot = {bool_flag(unregister_on_reboot)}",
-                    f"account.{idx}.label = {line.name}",
+                    f"account.{idx}.label = {line_label}",
                     f"account.{idx}.display_name = {line.name}",
                     f"account.{idx}.auth_name = {line.registration_account}",
                     f"account.{idx}.user_name = {line.registration_account}",
