@@ -433,42 +433,48 @@ class YealinkSIPT33G(DeviceType):
         def get_timezone_offset_and_dst(tz_name: str) -> tuple[float, int]:
             """
             Calculate UTC offset and DST flag for a timezone.
-            Automatically determines if timezone observes DST by comparing summer/winter offsets.
+            Works correctly for both Northern and Southern Hemispheres.
             
             Returns: (offset_hours: float, dst_flag: int)
-            - offset_hours: UTC offset without DST (-12 to +14)
+            - offset_hours: Standard time UTC offset without DST (-12 to +14)
             - dst_flag: 0=no DST support, 1=DST currently active, 2=DST supported but not active
             """
             try:
                 tz = pytz.timezone(tz_name)
                 
-                # Get offset for winter date (Jan 15) - standard time
-                winter_date = datetime(2026, 1, 15, tzinfo=tz)
-                winter_offset_seconds = winter_date.utcoffset().total_seconds()
-                winter_offset_hours = winter_offset_seconds / 3600
+                # Sample two dates to detect DST pattern (use localize() for pytz)
+                jan_naive = datetime(2026, 1, 15, 12, 0, 0)
+                jul_naive = datetime(2026, 7, 15, 12, 0, 0)
                 
-                # Get offset for summer date (Jul 15) - potential DST time
-                summer_date = datetime(2026, 7, 15, tzinfo=tz)
-                summer_offset_seconds = summer_date.utcoffset().total_seconds()
-                summer_offset_hours = summer_offset_seconds / 3600
+                jan_date = tz.localize(jan_naive)
+                jul_date = tz.localize(jul_naive)
                 
-                # Check if timezone observes DST (offsets differ between summer and winter)
-                observes_dst = winter_offset_hours != summer_offset_hours
+                jan_offset_hours = jan_date.utcoffset().total_seconds() / 3600
+                jul_offset_hours = jul_date.utcoffset().total_seconds() / 3600
+                
+                # Standard time is the smaller offset (closer to UTC)
+                # DST adds an hour, so DST offset is larger
+                standard_offset = min(jan_offset_hours, jul_offset_hours)
+                dst_offset = max(jan_offset_hours, jul_offset_hours)
+                
+                # Check if timezone observes DST
+                observes_dst = (jan_offset_hours != jul_offset_hours)
                 
                 if not observes_dst:
                     # Timezone doesn't observe DST
-                    return winter_offset_hours, 0
+                    return standard_offset, 0
                 else:
-                    # Timezone observes DST - check if we're currently in DST period
-                    now = datetime.now(tz=tz)
+                    # Timezone observes DST - check if currently active
+                    now_naive = datetime.now()
+                    now = tz.localize(now_naive)
                     current_offset_hours = now.utcoffset().total_seconds() / 3600
                     
-                    if current_offset_hours == summer_offset_hours:
-                        # Currently in DST (summer time)
-                        return winter_offset_hours, 1
+                    if abs(current_offset_hours - dst_offset) < 0.01:
+                        # Currently in DST period
+                        return standard_offset, 1
                     else:
-                        # Currently in standard time (winter time)
-                        return winter_offset_hours, 2
+                        # Currently in standard time
+                        return standard_offset, 2
             except Exception:
                 # Fallback to UTC if timezone parsing fails
                 return 0.0, 0
@@ -598,7 +604,7 @@ class YealinkSIPT33G(DeviceType):
         sip_trust_only = True       # Trust only SIP servers in config
         auto_line_keys = True       # Auto provision all lines on keys
         direct_ip_call_enable = False   # Disable answering direct IP calls   
-        management_server_enable   = True   # Is management server enabled?
+        management_server_enable   = False   # Is TR-069 management server enabled?
         power_saving_enable = False     # Is power saving enabled?
         lldp_packet_interval = 60       # Number of seconds between LLDP packets
         cdp_packet_interval = 60        # Number of seconds between CDP packets
@@ -697,7 +703,7 @@ class YealinkSIPT33G(DeviceType):
         )
 
         if admin_password:
-            config_lines.append(f"security.user_password = {admin_password}")
+            config_lines.append(f"security.user_password = admin:{admin_password}")
 
 
         # Voice Quality RTCP-XR settings (only if enabled)
