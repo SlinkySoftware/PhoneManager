@@ -249,6 +249,35 @@
                       :rules="option.mandatory ? [val => !!val || `${option.friendlyName} is required`] : []"
                     />
 
+                    <!-- Multi-Select (Checkboxes) -->
+                    <div v-else-if="option.type === 'multiselect'" class="q-mt-md">
+                      <q-card flat style="border: 2px solid #1db885;" class="bg-grey-7">
+                        <q-card-section class="bg-teal-8 text-white q-py-sm">
+                          <div class="text-subtitle2">{{ option.friendlyName }}</div>
+                        </q-card-section>
+                        <q-card-section class="q-gutter-sm">
+                          <div class="row q-col-gutter-md">
+                            <template v-for="choice in (option.choices || option.options || [])" :key="choice">
+                              <div class="col-12 col-sm-6 col-md-4">
+                                <q-checkbox
+                                  :model-value="(Array.isArray(deviceConfigValues[option.optionId]) ? deviceConfigValues[option.optionId] : []).includes(choice)"
+                                  @update:model-value="toggleDeviceMultiselectChoice(option.optionId, choice)"
+                                  :label="choice"
+                                  color="teal"
+                                  :disable="isReadOnly"
+                                  dense
+                                  class="text-white"
+                                />
+                              </div>
+                            </template>
+                          </div>
+                          <div v-if="(!option.choices && !option.options) || (option.choices || option.options || []).length === 0" class="text-caption text-grey-5">
+                            No options available
+                          </div>
+                        </q-card-section>
+                      </q-card>
+                    </div>
+
                     <!-- Ordered Multi-Select -->
                     <div v-else-if="option.type === 'orderedmultiselect'" class="q-gutter-md">
                       <div class="text-subtitle2 text-white">{{ option.friendlyName }}</div>
@@ -334,6 +363,8 @@
 
         <!-- Actions -->
         <q-card-actions align="right" class="q-pa-md">
+          <q-btn v-if="!isReadOnly && selectedDeviceType?.deviceSpecificOptions?.sections" flat label="Reset Options" color="warning" @click="confirmResetDeviceOptions" />
+          <q-space />
           <q-btn flat :label="isReadOnly ? 'Close' : 'Cancel'" color="primary" @click="handleCancel" />
           <q-btn v-if="!isReadOnly" unelevated label="Save" color="positive" @click="save" :loading="saving" />
         </q-card-actions>
@@ -372,6 +403,23 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <!-- Reset Device Options Confirmation Dialog -->
+    <q-dialog v-model="resetConfirmDialog">
+      <q-card style="min-width: 400px" class="bg-grey-9">
+        <q-card-section class="bg-warning text-white">
+          <div class="text-h6">Reset Device Options to Defaults?</div>
+        </q-card-section>
+        <q-card-section class="text-white">
+          <p>This will reset all device-specific configuration options to their default values.</p>
+          <p class="text-caption text-grey-5">Standard device settings (Name, MAC Address, Site, Lines) will not be affected.</p>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat label="Cancel" color="primary" v-close-popup />
+          <q-btn unelevated label="Reset" color="warning" @click="performResetDeviceOptions" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -394,6 +442,7 @@ const deleteDialog = ref(false);
 const itemToDelete = ref(null);
 const deleteError = ref('');
 const cancelConfirmDialog = ref(false);
+const resetConfirmDialog = ref(false);
 const formHasChanges = ref(false);
 const originalForm = ref(null);
 const originalLines = ref(null);
@@ -592,6 +641,23 @@ const availableDeviceChoices = (option) => {
   return choicesArray.filter(opt => !selectedArray.includes(opt));
 };
 
+/**
+ * Toggle a choice in a multiselect option.
+ */
+const toggleDeviceMultiselectChoice = (optionId, choice) => {
+  if (!deviceConfigValues.value[optionId]) {
+    deviceConfigValues.value[optionId] = [];
+  }
+  const idx = deviceConfigValues.value[optionId].indexOf(choice);
+  if (idx === -1) {
+    // Add choice
+    deviceConfigValues.value[optionId].push(choice);
+  } else {
+    // Remove choice
+    deviceConfigValues.value[optionId].splice(idx, 1);
+  }
+};
+
 const moveDeviceToSelected = (optionId, value) => {
   if (!deviceConfigValues.value[optionId]) {
     deviceConfigValues.value[optionId] = [];
@@ -729,6 +795,14 @@ const openEdit = async (row) => {
         if (option.type === 'password') {
           deviceConfigValues.value[option.optionId] = '';
         }
+        // Ensure multiselect/orderedmultiselect values are arrays
+        if (option.type === 'multiselect' || option.type === 'orderedmultiselect') {
+          const currentValue = deviceConfigValues.value[option.optionId];
+          if (!Array.isArray(currentValue)) {
+            // Convert string to array or initialize empty
+            deviceConfigValues.value[option.optionId] = currentValue && currentValue.length > 0 ? [currentValue] : [];
+          }
+        }
       });
     });
   }
@@ -848,6 +922,32 @@ const handleCancel = () => {
 const discardAndClose = () => {
   cancelConfirmDialog.value = false;
   dialog.value = false;
+};
+
+/**
+ * Show confirmation dialog for resetting device options.
+ */
+const confirmResetDeviceOptions = () => {
+  resetConfirmDialog.value = true;
+};
+
+/**
+ * Reset device-specific configuration options to defaults.
+ * Does not affect static settings (Name, MAC, Site, Lines).
+ */
+const performResetDeviceOptions = () => {
+  resetConfirmDialog.value = false;
+  if (selectedDeviceType.value?.deviceSpecificOptions?.sections) {
+    selectedDeviceType.value.deviceSpecificOptions.sections.forEach(section => {
+      section.options?.forEach(option => {
+        // Set default based on option type
+        const defaultValue = option.default ?? (option.type === 'orderedmultiselect' || option.type === 'multiselect' ? [] : '');
+        deviceConfigValues.value[option.optionId] = defaultValue;
+      });
+    });
+  }
+  // Clear password change tracking
+  passwordFieldsChanged.value = {};
 };
 
 watch(

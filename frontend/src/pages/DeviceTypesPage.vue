@@ -126,6 +126,35 @@
                   :rules="option.mandatory ? [val => !!val || `${option.friendlyName} is required`] : []"
                 />
 
+                <!-- Multi-Select (Checkboxes) -->
+                <div v-else-if="option.type === 'multiselect'" class="q-mt-md">
+                  <q-card flat style="border: 2px solid #1db885;" class="bg-grey-7">
+                    <q-card-section class="bg-green-9 text-white q-py-sm">
+                      <div class="text-subtitle2">{{ option.friendlyName }}</div>
+                    </q-card-section>
+                    <q-card-section class="q-gutter-sm">
+                      <div class="row q-col-gutter-md">
+                        <template v-for="choice in (option.choices || option.options || [])" :key="choice">
+                          <div class="col-12 col-sm-6 col-md-4">
+                            <q-checkbox
+                              :model-value="(Array.isArray(optionValues[option.optionId]) ? optionValues[option.optionId] : []).includes(choice)"
+                              @update:model-value="toggleMultiselectChoice(option.optionId, choice)"
+                              :label="choice"
+                              color="green"
+                              :disable="isReadOnly"
+                              dense
+                              class="text-white"
+                            />
+                          </div>
+                        </template>
+                      </div>
+                      <div v-if="(!option.choices && !option.options) || (option.choices || option.options || []).length === 0" class="text-caption text-grey-5">
+                        No options available
+                      </div>
+                    </q-card-section>
+                  </q-card>
+                </div>
+
                 <!-- Ordered Multi-Select -->
                 <div v-else-if="option.type === 'orderedmultiselect'" class="q-gutter-md">
                   <div class="text-subtitle2 text-white">{{ option.friendlyName }}</div>
@@ -299,7 +328,7 @@ const openOptions = async (deviceType) => {
       data.common_options.sections.forEach(section => {
         section.options?.forEach(option => {
           const savedValue = data.saved_values?.[option.optionId];
-          const defaultValue = option.default ?? (option.type === 'orderedmultiselect' ? [] : '');
+          const defaultValue = option.default ?? (option.type === 'orderedmultiselect' || option.type === 'multiselect' ? [] : '');
           optionValues.value[option.optionId] = savedValue ?? defaultValue;
         });
       });
@@ -309,7 +338,7 @@ const openOptions = async (deviceType) => {
     if (deviceType.commonOptions?.sections) {
       deviceType.commonOptions.sections.forEach(section => {
         section.options?.forEach(option => {
-          const defaultValue = option.default ?? (option.type === 'orderedmultiselect' ? [] : '');
+          const defaultValue = option.default ?? (option.type === 'orderedmultiselect' || option.type === 'multiselect' ? [] : '');
           optionValues.value[option.optionId] = defaultValue;
         });
       });
@@ -355,7 +384,7 @@ const performReset = () => {
   if (selectedType.value?.commonOptions?.sections) {
     selectedType.value.commonOptions.sections.forEach(section => {
       section.options?.forEach(option => {
-        const defaultValue = option.default ?? (option.type === 'orderedmultiselect' ? [] : '');
+        const defaultValue = option.default ?? (option.type === 'orderedmultiselect' || option.type === 'multiselect' ? [] : '');
         optionValues.value[option.optionId] = defaultValue;
       });
     });
@@ -378,6 +407,23 @@ const sortedSections = computed(() => {
 const sortedOptions = (options) => {
   if (!options) return [];
   return [...options].sort((a, b) => (a.uiOrder || 999) - (b.uiOrder || 999));
+};
+
+/**
+ * Toggle a choice in a multiselect option.
+ */
+const toggleMultiselectChoice = (optionId, choice) => {
+  if (!optionValues.value[optionId]) {
+    optionValues.value[optionId] = [];
+  }
+  const idx = optionValues.value[optionId].indexOf(choice);
+  if (idx === -1) {
+    // Add choice
+    optionValues.value[optionId].push(choice);
+  } else {
+    // Remove choice
+    optionValues.value[optionId].splice(idx, 1);
+  }
 };
 
 /**
