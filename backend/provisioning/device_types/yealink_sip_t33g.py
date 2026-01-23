@@ -471,16 +471,45 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                 },                
 			]
 		},
-	]
-}
-
-
-class YealinkSIPT33G(DeviceType):
-    TypeID = "YealinkSIPT33G"
-    Manufacturer = "Yealink"
-    Model = "SIP-T33G"
-    NumberOfLines = 4
-    CommonOptions = COMMON_OPTIONS
+		{
+            "friendlyName": "Syslog",
+            "uiOrder": 5,
+            "options": [
+                {
+                    "optionId": "syslog_enable",
+                    "friendlyName": "Enable Syslog",
+                    "default": False,
+                    "mandatory": False,
+                    "type": "boolean",
+                    "uiOrder": 1,
+                },
+                {
+                    "optionId": "syslog_server",
+                    "friendlyName": "Syslog Server",
+                    "default": "",
+                    "mandatory": False,
+                    "type": "text",
+                    "uiOrder": 2,
+                },
+                {
+                    "optionId": "syslog_server_port",
+                    "friendlyName": "Syslog Server Port",
+                    "default": 514,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 3,
+                },
+                {
+                    "optionId": "syslog_transport_type",
+                    "friendlyName": "Syslog Transport Type",
+                    "default": "UDP",
+                    "mandatory": False,
+                    "type": "select",
+                    "choices": ["UDP", "TCP", "TLS"],
+                    "uiOrder": 4,
+                }
+            ]
+        },
     DeviceSpecificOptions = DEVICE_OPTIONS
     ContentType = "text/plain"
 
@@ -710,6 +739,12 @@ class YealinkSIPT33G(DeviceType):
         failback_mode = opt("failback_mode", "Duration")
         failback_duration = int(opt("failback_duration", 10)) * 60  # Convert minutes to seconds
         
+        # Syslog
+        syslog_enable = bool(opt("syslog_enable", False))
+        syslog_server = opt("syslog_server", "")
+        syslog_server_port = int(opt("syslog_server_port", 514))
+        syslog_transport_type = opt("syslog_transport_type", "UDP")
+        
         
 
         # VQ RTCP-XR
@@ -827,6 +862,17 @@ class YealinkSIPT33G(DeviceType):
 
             ]
         )
+
+        # Syslog Configuration
+        if syslog_enable:
+            config_lines.extend(
+                [
+                    f"static.syslog.enable = {bool_flag(syslog_enable)}",
+                    f"static.syslog.server = {syslog_server}",
+                    f"static.syslog.server_port = {syslog_server_port}",
+                    f"static.syslog.transport_type = {transport_map.get(syslog_transport_type, 0)}",
+                ]
+            )
 
         # Time / NTP
         tz_config = get_timezone_config(site.timezone)
