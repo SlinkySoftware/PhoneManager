@@ -510,6 +510,16 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                 }
             ]
         },
+	]
+}
+
+
+class YealinkSIPT33G(DeviceType):
+    TypeID = "YealinkSIPT33G"
+    Manufacturer = "Yealink"
+    Model = "SIP-T33G"
+    NumberOfLines = 4
+    CommonOptions = COMMON_OPTIONS
     DeviceSpecificOptions = DEVICE_OPTIONS
     ContentType = "text/plain"
 
