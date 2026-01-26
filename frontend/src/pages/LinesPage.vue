@@ -23,6 +23,30 @@
       <template #body-cell-is_shared="props">
         <q-td>{{ props.value ? 'Yes' : 'No' }}</q-td>
       </template>
+        <template #body-cell-in_use="props">
+          <q-td align="center">
+            <q-btn
+              v-if="lineUsage(props.row.id).length"
+              dense
+              flat
+              round
+              icon="search"
+              color="light-blue-5"
+              size="sm"
+            >
+              <q-tooltip>In use by {{ lineUsage(props.row.id).length }} device(s)</q-tooltip>
+              <q-menu anchor="bottom left" self="top left">
+                <q-list dense style="min-width: 240px">
+                  <q-item v-for="deviceName in lineUsage(props.row.id)" :key="deviceName">
+                    <q-item-section>
+                      {{ deviceName }}
+                    </q-item-section>
+                  </q-item>
+                </q-list>
+              </q-menu>
+            </q-btn>
+          </q-td>
+        </template>
       <template #body-cell-actions="props">
         <q-td align="right">
           <q-btn v-if="!isReadOnly" dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
@@ -140,6 +164,7 @@ const authStore = useAuthStore();
 const isReadOnly = computed(() => authStore.user?.role === 'readonly');
 
 const lines = ref([]);
+const devices = ref([]);
 const loading = ref(false);
 const dialog = ref(false);
 const errorMessage = ref('');
@@ -165,6 +190,7 @@ const columns = [
   { name: 'directory_number', label: 'Directory Number', field: 'directory_number', align: 'left', sortable: true },
   { name: 'registration_account', label: 'Reg Account', field: 'registration_account', align: 'left', sortable: true },
   { name: 'is_shared', label: 'Shared', field: 'is_shared', align: 'left', sortable: true },
+    { name: 'in_use', label: 'In Use', field: 'in_use', align: 'center' },
   { name: 'actions', label: 'Actions', field: 'actions', align: 'right' }
 ];
 
@@ -194,6 +220,29 @@ const loadLines = async () => {
     loading.value = false;
   }
 };
+
+const loadDevices = async () => {
+  const { data } = await api.get('/devices/');
+  devices.value = data;
+};
+const lineUsageMap = computed(() => {
+  const usage = {};
+  devices.value.forEach(device => {
+    const deviceName = device.name || device.mac_address || `Device ${device.id}`;
+    const deviceLines = new Set();
+    if (device.line_1) deviceLines.add(device.line_1);
+    if (Array.isArray(device.lines)) {
+      device.lines.forEach(l => deviceLines.add(l));
+    }
+    deviceLines.forEach(lineId => {
+      if (!usage[lineId]) usage[lineId] = [];
+      usage[lineId].push(deviceName);
+    });
+  });
+  return usage;
+});
+
+const lineUsage = (lineId) => lineUsageMap.value[lineId] || [];
 
 const openCreate = () => {
   form.value = emptyForm();
@@ -267,5 +316,7 @@ const confirmDelete = async () => {
   }
 };
 
-onMounted(loadLines);
+onMounted(async () => {
+  await Promise.all([loadLines(), loadDevices()]);
+});
 </script>

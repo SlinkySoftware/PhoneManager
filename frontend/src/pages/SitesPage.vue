@@ -26,6 +26,28 @@
       <template #body-cell-secondary_sip_server="props">
         <q-td>{{ serverLabel(props.value) }}</q-td>
       </template>
+      <template #body-cell-in_use="props">
+        <q-td align="center">
+          <q-btn
+            v-if="siteUsage(props.row.id).length"
+            dense
+            flat
+            round
+            icon="search"
+            color="light-blue-5"
+            size="sm"
+          >
+            <q-tooltip>In use by {{ siteUsage(props.row.id).length }} device(s)</q-tooltip>
+            <q-menu anchor="bottom left" self="top left">
+              <q-list dense style="min-width: 240px">
+                <q-item v-for="deviceName in siteUsage(props.row.id)" :key="deviceName">
+                  <q-item-section>{{ deviceName }}</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </q-btn>
+        </q-td>
+      </template>
       <template #body-cell-actions="props">
         <q-td align="right">
           <q-btn v-if="!isReadOnly" dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
@@ -153,6 +175,7 @@ const timezoneOptions = ref([]);
 const allTimezones = ref([]);
 
 const sites = ref([]);
+const devices = ref([]);
 const sipServers = ref([]);
 const loading = ref(false);
 const dialog = ref(false);
@@ -178,6 +201,7 @@ const columns = [
   { name: 'primary_sip_server', label: 'Primary SIP', field: 'primary_sip_server', align: 'left' },
   { name: 'secondary_sip_server', label: 'Secondary SIP', field: 'secondary_sip_server', align: 'left' },
   { name: 'timezone', label: 'Timezone', field: 'timezone', align: 'left' },
+  { name: 'in_use', label: 'In Use', field: 'in_use', align: 'center' },
   { name: 'actions', label: 'Actions', field: 'actions', align: 'right' }
 ];
 
@@ -277,6 +301,11 @@ const loadSites = async () => {
   }
 };
 
+const loadDevices = async () => {
+  const { data } = await api.get('/devices/');
+  devices.value = data;
+};
+
 const openCreate = () => {
   form.value = emptyForm();
   errorMessage.value = '';
@@ -333,7 +362,21 @@ const confirmDelete = async () => {
   }
 };
 
+const siteUsageMap = computed(() => {
+  const usage = {};
+  devices.value.forEach(device => {
+    const deviceName = device.name || device.mac_address || `Device ${device.id}`;
+    if (device.site) {
+      if (!usage[device.site]) usage[device.site] = [];
+      usage[device.site].push(deviceName);
+    }
+  });
+  return usage;
+});
+
+const siteUsage = (siteId) => siteUsageMap.value[siteId] || [];
+
 onMounted(async () => {
-  await Promise.all([loadSipServers(), loadTimezones(), loadSites()]);
+  await Promise.all([loadSipServers(), loadTimezones(), loadSites(), loadDevices()]);
 });
 </script>

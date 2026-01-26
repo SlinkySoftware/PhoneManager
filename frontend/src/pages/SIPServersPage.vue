@@ -20,6 +20,28 @@
       no-data-label="No SIP servers yet"
       :pagination="{ rowsPerPage: 20, rowsPerPageOptions: [20, 50, 100, 0] }"
     >
+      <template #body-cell-in_use="props">
+        <q-td align="center">
+          <q-btn
+            v-if="sipServerUsage(props.row.id).length"
+            dense
+            flat
+            round
+            icon="search"
+            color="light-blue-5"
+            size="sm"
+          >
+            <q-tooltip>In use by {{ sipServerUsage(props.row.id).length }} site(s)</q-tooltip>
+            <q-menu anchor="bottom left" self="top left">
+              <q-list dense style="min-width: 240px">
+                <q-item v-for="siteName in sipServerUsage(props.row.id)" :key="siteName">
+                  <q-item-section>{{ siteName }}</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </q-btn>
+        </q-td>
+      </template>
       <template #body-cell-actions="props">
         <q-td align="right">
           <q-btn v-if="!isReadOnly" dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
@@ -116,6 +138,7 @@ const authStore = useAuthStore();
 const isReadOnly = computed(() => authStore.user?.role === 'readonly');
 
 const servers = ref([]);
+const sites = ref([]);
 const loading = ref(false);
 const dialog = ref(false);
 const errorMessage = ref('');
@@ -132,6 +155,7 @@ const columns = [
   { name: 'host', label: 'Host', field: 'host', align: 'left' },
   { name: 'port', label: 'Port', field: 'port', align: 'left' },
   { name: 'transport', label: 'Transport', field: 'transport', align: 'left' },
+  { name: 'in_use', label: 'In Use', field: 'in_use', align: 'center' },
   { name: 'actions', label: 'Actions', field: 'actions', align: 'right' }
 ];
 
@@ -160,6 +184,11 @@ const loadServers = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const loadSites = async () => {
+  const { data } = await api.get('/sites/');
+  sites.value = data;
 };
 
 const openCreate = () => {
@@ -223,5 +252,25 @@ const confirmDelete = async () => {
   }
 };
 
-onMounted(loadServers);
+const sipServerUsageMap = computed(() => {
+  const usage = {};
+  sites.value.forEach(site => {
+    const siteName = site.name || `Site ${site.id}`;
+    if (site.primary_sip_server) {
+      if (!usage[site.primary_sip_server]) usage[site.primary_sip_server] = [];
+      usage[site.primary_sip_server].push(`${siteName} (primary)`);
+    }
+    if (site.secondary_sip_server) {
+      if (!usage[site.secondary_sip_server]) usage[site.secondary_sip_server] = [];
+      usage[site.secondary_sip_server].push(`${siteName} (secondary)`);
+    }
+  });
+  return usage;
+});
+
+const sipServerUsage = (serverId) => sipServerUsageMap.value[serverId] || [];
+
+onMounted(async () => {
+  await Promise.all([loadServers(), loadSites()]);
+});
 </script>
