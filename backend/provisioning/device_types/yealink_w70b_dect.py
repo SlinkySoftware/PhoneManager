@@ -456,7 +456,7 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                 {
                     "optionId": "handset_1_inbound_line_mapping",
                     "friendlyName": "Lines to ring on Handset 1",
-                    "default": "Line 1",
+                    "default": ["Line 1"],
                     "mandatory": False,
                     "type": "multiselect",
                     "choices": ["Line 1","Line 2","Line 3","Line 4","Line 5","Line 6","Line 7","Line 8","Line 9","Line 10"],
@@ -465,7 +465,7 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                 {
                     "optionId": "handset_2_inbound_line_mapping",
                     "friendlyName": "Lines to ring on Handset 2",
-                    "default": "Line 2",
+                    "default": ["Line 2"],
                     "mandatory": False,
                     "type": "multiselect",
                     "choices": ["Line 1","Line 2","Line 3","Line 4","Line 5","Line 6","Line 7","Line 8","Line 9","Line 10"],
@@ -474,7 +474,7 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                 {
                     "optionId": "handset_3_inbound_line_mapping",
                     "friendlyName": "Lines to ring on Handset 3",
-                    "default": "Line 3",
+                    "default": ["Line 3"],
                     "mandatory": False,
                     "type": "multiselect",
                     "choices": ["Line 1","Line 2","Line 3","Line 4","Line 5","Line 6","Line 7","Line 8","Line 9","Line 10"],
@@ -483,7 +483,7 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                 {
                     "optionId": "handset_4_inbound_line_mapping",
                     "friendlyName": "Lines to ring on Handset 4",
-                    "default": "Line 4",
+                    "default": ["Line 4"],
                     "mandatory": False,
                     "type": "multiselect",
                     "choices": ["Line 1","Line 2","Line 3","Line 4","Line 5","Line 6","Line 7","Line 8","Line 9","Line 10"],
@@ -492,7 +492,7 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                 {
                     "optionId": "handset_5_inbound_line_mapping",
                     "friendlyName": "Lines to ring on Handset 5",
-                    "default": "Line 5",
+                    "default": ["Line 5"],
                     "mandatory": False,
                     "type": "multiselect",
                     "choices": ["Line 1","Line 2","Line 3","Line 4","Line 5","Line 6","Line 7","Line 8","Line 9","Line 10"],
@@ -501,7 +501,7 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                 {
                     "optionId": "handset_6_inbound_line_mapping",
                     "friendlyName": "Lines to ring on Handset 6",
-                    "default": "Line 6",
+                    "default": ["Line 6"],
                     "mandatory": False,
                     "type": "multiselect",
                     "choices": ["Line 1","Line 2","Line 3","Line 4","Line 5","Line 6","Line 7","Line 8","Line 9","Line 10"],
@@ -510,7 +510,7 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                 {
                     "optionId": "handset_7_inbound_line_mapping",
                     "friendlyName": "Lines to ring on Handset 7",
-                    "default": "Line 7",
+                    "default": ["Line 7"],
                     "mandatory": False,
                     "type": "multiselect",
                     "choices": ["Line 1","Line 2","Line 3","Line 4","Line 5","Line 6","Line 7","Line 8","Line 9","Line 10"],
@@ -519,7 +519,7 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                 {
                     "optionId": "handset_8_inbound_line_mapping",
                     "friendlyName": "Lines to ring on Handset 8",
-                    "default": "Line 8",
+                    "default": ["Line 8"],
                     "mandatory": False,
                     "type": "multiselect",
                     "choices": ["Line 1","Line 2","Line 3","Line 4","Line 5","Line 6","Line 7","Line 8","Line 9","Line 10"],
@@ -528,7 +528,7 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                 {
                     "optionId": "handset_9_inbound_line_mapping",
                     "friendlyName": "Lines to ring on Handset 9",
-                    "default": "Line 9",
+                    "default": ["Line 9"],
                     "mandatory": False,
                     "type": "multiselect",
                     "choices": ["Line 1","Line 2","Line 3","Line 4","Line 5","Line 6","Line 7","Line 8","Line 9","Line 10"],
@@ -537,7 +537,7 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                 {
                     "optionId": "handset_10_inbound_line_mapping",
                     "friendlyName": "Lines to ring on Handset 10",
-                    "default": "Line 10",
+                    "default": ["Line 10"],
                     "mandatory": False,
                     "type": "multiselect",
                     "choices": ["Line 1","Line 2","Line 3","Line 4","Line 5","Line 6","Line 7","Line 8","Line 9","Line 10"],
