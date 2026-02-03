@@ -14,6 +14,7 @@ Notes:
 from __future__ import annotations
 from textwrap import dedent
 from typing import Any, Dict, List
+import re
 
 from .base import DeviceType
 
@@ -232,6 +233,81 @@ class GrandstreamHT812(DeviceType):
         }
         return [mapping[c] for c in codec_order if c in mapping]
 
+    def _convert_to_grandstream_dialplan(self, input_regex: str, output_regex: str) -> str:
+        """Convert standard regex dial plan rule to Grandstream syntax.
+        
+        Args:
+            input_regex: Standard format pattern (e.g., "0([23478]XXXXXXXX)")
+            output_regex: Standard format replacement (e.g., "+61$1")
+        
+        Returns:
+            Grandstream dial plan entry (e.g., "<0=+61>[23478]xxxxxxxxT")
+        
+        Translation rules:
+            - X → x (lowercase)
+            - * → + (then combine with preceding x to make x+)
+            - Remove ^ and $ anchors
+            - [2468] → [2468] (preserved)
+            - (pattern) with $1 → prepend/replace syntax
+            - Fixed prefix → use <prefix=replacement> or <=prepend>
+            - T suffix for variable-length patterns
+        """
+        if not input_regex or not output_regex:
+            return ""
+        
+        # Remove anchors
+        inp = input_regex.replace("^", "").replace("$", "")
+        out = output_regex
+        
+        # Check for capture group pattern: prefix(pattern) → replacement$1
+        capture_match = re.match(r'^([^(]*)\(([^)]+)\)$', inp)
+        
+        if capture_match:
+            prefix = capture_match.group(1)
+            captured = capture_match.group(2)
+            
+            # Check if output uses $1
+            if "$1" in out:
+                replacement_prefix = out.replace("$1", "")
+                
+                # Convert captured pattern carefully:
+                # First handle * → + conversion, then lowercase X
+                # This ensures XXX* becomes xxx+ not xxxx+
+                converted_captured = captured.replace("*", "+").replace("X", "x")
+                
+                if prefix:
+                    # Pattern like: 0([23]xxx) → +61$1 becomes <0=+61>[23]xxx
+                    result = f"<{prefix}={replacement_prefix}>{converted_captured}"
+                else:
+                    # Pattern like: ([467]xxx) → +612$1 becomes <=+612>[467]xxx
+                    result = f"<={replacement_prefix}>{converted_captured}"
+                
+                # Add T suffix ONLY for variable-length patterns (contains x+)
+                # T = inter-digit timeout for patterns that can match varying lengths
+                if "x+" in converted_captured:
+                    result += "T"
+                
+                return result
+        
+        # Simple prepend case: no capture groups, just prepend prefix
+        # Example: 000 → +61000 becomes <=+61>000
+        converted_inp = inp.replace("*", "+").replace("X", "x")
+        
+        # Check if output contains the input pattern
+        if converted_inp in out.replace("x", "X"):
+            # Pure prepend case
+            prefix_to_add = out.replace(inp, "").replace(converted_inp.upper(), "")
+            result = f"<={prefix_to_add}>{converted_inp}"
+        else:
+            # Direct replacement case
+            result = f"<={out}>{converted_inp}"
+        
+        # Add T suffix for variable-length patterns
+        if "x+" in result and not result.endswith("T"):
+            result += "T"
+        
+        return result
+
     def render(self, device: Any) -> str:
         line1 = device.line_1
         additional_lines = list(getattr(device, "lines").all()) if hasattr(device, "lines") else []
@@ -376,6 +452,29 @@ class GrandstreamHT812(DeviceType):
         # Admin password
         admin_block = f"<P2>{admin_password}</P2>" if admin_password else ""
 
+        # Dial plan conversion (site-level)
+        dialplan_block = ""
+        dial_plan = getattr(site, "dial_plan", None)
+        if dial_plan:
+            rules = dial_plan.rules.all().order_by("sequence_order")
+            dialplan_entries = []
+            for rule in rules:
+                entry = self._convert_to_grandstream_dialplan(rule.input_regex, rule.output_regex)
+                if entry:
+                    dialplan_entries.append(entry)
+            
+            if dialplan_entries:
+                # Grandstream dial plan format: { rule1 | rule2 | rule3 }
+                dialplan_string = "{ " + " | ".join(dialplan_entries) + " }"
+                # P2396 is the dial plan P-code for FXS1, P2398 for FXS2
+                # We'll apply the same dial plan to both ports
+                dialplan_block = dedent(
+                    f"""
+                    <P2396>{dialplan_string}</P2396>
+                    <P2398>{dialplan_string}</P2398>
+                    """
+                ).strip()
+
         xml = dedent(
             f"""
             <?xml version="1.0" encoding="UTF-8"?>
@@ -400,6 +499,9 @@ class GrandstreamHT812(DeviceType):
 
                                 <!-- Administrative password -->
                                 {admin_block}
+
+                <!-- Dial plan transformation rules -->
+                {dialplan_block}
 
                 <!-- Site primary SIP Server: {primary.host}:{primary.port} / {primary.transport} -->
                 {secondary_hint}
