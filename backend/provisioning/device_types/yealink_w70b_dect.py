@@ -7,6 +7,7 @@
 from __future__ import annotations
 from typing import Any, Dict, List
 from datetime import datetime
+import re
 
 import pytz
 
@@ -923,6 +924,36 @@ class YealinkW70BDECT(DeviceType):
         def bool_flag(value: Any) -> str:
             return "1" if bool(value) else "0"
 
+        def convert_yealink_input_regex(pattern: str) -> str:
+            if not pattern:
+                return ""
+
+            converted = pattern.replace("^", "").replace("$", "")
+            converted = converted.replace("*", ".").replace("X", "x")
+
+            def normalize_bracket(match: re.Match[str]) -> str:
+                content = match.group(1)
+                if not content:
+                    return "[]"
+
+                negation = ""
+                body = content
+                if body.startswith("^"):
+                    negation = "^"
+                    body = body[1:]
+
+                if "-" in body or "," in body or len(body) <= 1:
+                    return f"[{negation}{body}]"
+
+                return f"[{negation}{','.join(list(body))}]"
+
+            return re.sub(r"\[([^\]]*)\]", normalize_bracket, converted)
+
+        def convert_yealink_output_regex(pattern: str) -> str:
+            if not pattern:
+                return ""
+            return pattern.replace("X", "x")
+
         def get_timezone_config(tz_name: str) -> dict[str, Any]:
             """
             Calculate Yealink timezone and DST configuration.
@@ -1338,6 +1369,22 @@ class YealinkW70BDECT(DeviceType):
 
         if admin_password:
             config_lines.append(f"security.user_password = admin:{admin_password}")
+
+        # Dial plan rules (site-level)
+        dial_plan = getattr(site, "dial_plan", None)
+        if dial_plan:
+            rules = dial_plan.rules.all().order_by("sequence_order")
+            for index, rule in enumerate(rules, start=1):
+                if index > 100:
+                    break
+                prefix = convert_yealink_input_regex(rule.input_regex)
+                replace = convert_yealink_output_regex(rule.output_regex)
+                config_lines.extend(
+                    [
+                        f"dialplan.replace.prefix.{index} = {prefix}",
+                        f"dialplan.replace.replace.{index} = {replace}",
+                    ]
+                )
 
         # Emergency Number
         if emergency_number:
