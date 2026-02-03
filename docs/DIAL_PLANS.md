@@ -12,6 +12,18 @@ The Dial Plans feature provides phone number transformation capabilities for SIP
 - **Renderer-Agnostic**: Device renderers convert to device-specific format
 - **Testable**: Built-in test function validates transformations
 
+### Supported Device Types
+
+The following device types currently support dial plan rendering:
+
+| Device Type | Renderer | Status | Config Format | Max Rules |
+|------------|----------|--------|---------------|-----------|
+| **Yealink SIP-T33G** | `yealink_sip_t33g.py` | ✓ Implemented | `dialplan.replace.prefix.X`<br>`dialplan.replace.replace.X` | 100 |
+| **Yealink W70B DECT** | `yealink_w70b_dect.py` | ✓ Implemented | `dialplan.replace.prefix.X`<br>`dialplan.replace.replace.X` | 100 |
+| **Grandstream HT812** | `grandstream_ht812.py` | ✓ Implemented | XML `<P2396>{ rules }</P2396>` | ~20-30* |
+
+*Limited by XML field size (~2048 chars)
+
 ## Architecture
 
 ### Data Model
@@ -373,10 +385,11 @@ def render(self, device: Device) -> str:
     """Generate device configuration."""
     
     # Access dial plan from site
-    if device.site and device.site.dial_plan:
-        dial_plan = device.site.dial_plan
-        rules = dial_plan.rules.order_by('sequence_order')
-        
+    site = device.site
+    dial_plan = getattr(site, "dial_plan", None)
+    
+    if dial_plan:
+        rules = dial_plan.rules.all().order_by("sequence_order")
         # Convert rules to device-specific format
         config = self._render_dial_plan_rules(rules)
     else:
@@ -390,39 +403,180 @@ def render(self, device: Device) -> str:
 
 **Important:** Renderers **convert** the standard format to device-specific syntax but **do not execute** transformations. The phone itself applies the dial plan rules.
 
-**Example: Yealink Format**
+---
 
-Standard format → Yealink dialplan.xml format:
+### Yealink Devices (SIP-T33G, W70B DECT)
+
+**Implemented in:**
+- `backend/provisioning/device_types/yealink_sip_t33g.py`
+- `backend/provisioning/device_types/yealink_w70b_dect.py`
+
+**Yealink Dial Plan Syntax:**
+
+Yealink devices use a modified regex syntax with these rules:
+- `.` (dot) = match any string (multiple characters)
+- `x` (lowercase) = match any single digit
+- `[a,b,c]` = digit class with comma separators
+- `()` = capture groups
+- `$1`, `$2` = capture group references
+- **No line_id parameter** = applies to all lines
+
+**Conversion Rules:**
+
+| Standard Format | Yealink Format | Description |
+|----------------|----------------|-------------|
+| `X` | `x` | Single digit (lowercase) |
+| `*` | `.` | Match any string |
+| `^` and `$` | *(removed)* | Anchors not used |
+| `[2468]` | `[2,4,6,8]` | Comma-separated digit class |
+| `$1` | `$1` | Capture group reference (unchanged) |
+
+**Rendering Format:**
 
 ```python
-def _render_dial_plan_rules(self, rules):
-    """Convert standard format to Yealink dialplan.xml"""
-    xml = '<dialplan>\n'
-    for rule in rules:
-        # Convert X → x, * → ., () → (), $1 → $1 (Yealink uses similar format)
-        yealink_input = rule.input_regex.replace('X', 'x')
-        yealink_output = rule.output_regex  # Yealink uses $1, $2
-        xml += f'  <rule input="{yealink_input}" output="{yealink_output}"/>\n'
-    xml += '</dialplan>\n'
-    return xml
+def convert_yealink_input_regex(pattern: str) -> str:
+    """Convert standard regex to Yealink format."""
+    # Remove anchors
+    converted = pattern.replace("^", "").replace("$", "")
+    # Convert wildcards and digits
+    converted = converted.replace("*", ".").replace("X", "x")
+    
+    # Convert digit classes: [2468] → [2,4,6,8]
+    def normalize_bracket(match):
+        content = match.group(1)
+        if not content or "-" in content or "," in content:
+            return f"[{content}]"  # Already has separators
+        # Add commas between single digits
+        return f"[{','.join(list(content))}]"
+    
+    return re.sub(r"\[([^\]]*)\]", normalize_bracket, converted)
+
+# Output format:
+# dialplan.replace.prefix.X = <converted_input_regex>
+# dialplan.replace.replace.X = <converted_output_regex>
 ```
 
-**Example: Grandstream Format**
+**Example Conversions:**
 
-Standard format → Grandstream P-values:
+| Standard Rule | Yealink Configuration |
+|--------------|----------------------|
+| `0([23478]XXXXXXXX)` → `+61$1` | `dialplan.replace.prefix.1 = 0([2,3,4,7,8]xxxxxxxx)`<br>`dialplan.replace.replace.1 = +61$1` |
+| `(1[38]XXX*)` → `+61$1` | `dialplan.replace.prefix.2 = (1[3,8]xxx.)`<br>`dialplan.replace.replace.2 = +61$1` |
+| `000` → `+61000` | `dialplan.replace.prefix.3 = 000`<br>`dialplan.replace.replace.3 = +61000` |
+
+**Generated Configuration:**
+
+```
+dialplan.replace.prefix.1 = 0([2,3,4,7,8]xxxxxxxx)
+dialplan.replace.replace.1 = +61$1
+dialplan.replace.prefix.2 = (1[3,8]xxx.)
+dialplan.replace.replace.2 = +61$1
+dialplan.replace.prefix.3 = 000
+dialplan.replace.replace.3 = +61000
+```
+
+**Limitations:**
+- Maximum 100 rules (X ranges from 1 to 100)
+- No per-line dial plans (applies globally to all lines)
+
+---
+
+### Grandstream HT812 ATA
+
+**Implemented in:**
+- `backend/provisioning/device_types/grandstream_ht812.py`
+
+**Grandstream Dial Plan Syntax:**
+
+Grandstream ATAs use a positional dial plan grammar:
+- `x` = exactly one digit (0-9)
+- `x+` = one or more digits (variable length)
+- `[23478]` = digit class (no commas)
+- `<=prefix>` = prepend digits
+- `<a=b>` = replace leading `a` with `b`
+- `T` = inter-digit timeout (required for variable-length patterns)
+- `{ rule1 | rule2 | rule3 }` = dial plan string format
+
+**Conversion Rules:**
+
+| Standard Format | Grandstream Format | Description |
+|----------------|-------------------|-------------|
+| `X` | `x` | Single digit (lowercase) |
+| `*` | `x+` | One or more digits |
+| `^` and `$` | *(removed)* | Anchors not used |
+| `[23478]` | `[23478]` | Digit class (unchanged) |
+| `0(XXX*)` → `+61$1` | `<0=+61>xxx+T` | Replace prefix with capture |
+| `(XXX*)` → `+61$1` | `<=+61>xxx+T` | Prepend to capture |
+| `000` → `+61000` | `<=+61>000` | Simple prepend |
+
+**T Suffix Rules:**
+- Add `T` **ONLY** for patterns containing `x+` (variable length)
+- **Never** add `T` for fixed-length patterns (e.g., `xxxxxxxx`)
+
+**Rendering Format:**
 
 ```python
-def _render_dial_plan_rules(self, rules):
-    """Convert standard format to Grandstream P-value format"""
-    config = ""
-    for idx, rule in enumerate(rules):
-        p_num = 200 + idx  # P200, P201, P202, etc.
-        # Grandstream uses { } for replace, x for digit
-        gs_input = rule.input_regex.replace('X', 'x').replace('*', '.')
-        gs_output = rule.output_regex.replace('$1', '{$1}').replace('$2', '{$2}')
-        config += f'P{p_num} = {gs_input},{gs_output}\n'
-    return config
+def _convert_to_grandstream_dialplan(self, input_regex: str, output_regex: str) -> str:
+    """Convert standard regex to Grandstream dial plan entry."""
+    # Remove anchors
+    inp = input_regex.replace("^", "").replace("$", "")
+    
+    # Check for capture group: prefix(pattern) → replacement$1
+    capture_match = re.match(r'^([^(]*)\(([^)]+)\)$', inp)
+    
+    if capture_match and "$1" in output_regex:
+        prefix = capture_match.group(1)
+        captured = capture_match.group(2)
+        replacement_prefix = output_regex.replace("$1", "")
+        
+        # Convert: * → +, then X → x (order matters!)
+        converted = captured.replace("*", "+").replace("X", "x")
+        
+        if prefix:
+            result = f"<{prefix}={replacement_prefix}>{converted}"
+        else:
+            result = f"<={replacement_prefix}>{converted}"
+        
+        # Add T only for variable-length patterns
+        if "x+" in converted:
+            result += "T"
+        
+        return result
+    
+    # Simple prepend: 000 → +61000 becomes <=+61>000
+    converted = inp.replace("*", "+").replace("X", "x")
+    result = f"<={output_regex}>{converted}"
+    if "x+" in converted:
+        result += "T"
+    return result
 ```
+
+**Example Conversions:**
+
+| Standard Rule | Grandstream Dial Plan Entry |
+|--------------|----------------------------|
+| `000` → `+61000` | `<=+61>000` |
+| `0([23478]XXXXXXXX)` → `+61$1` | `<0=+61>[23478]xxxxxxxx` *(no T - fixed length)* |
+| `(1[38]XXX*)` → `+61$1` | `<=+61>1[38]xxx+T` *(T for variable length)* |
+| `0011(XXXX*)` → `+$1` | `<0011=+>xxxx+T` *(T for variable length)* |
+| `([46789]XXXXXXX)` → `+612$1` | `<=+612>[46789]xxxxxxx` *(no T - fixed length)* |
+
+**Complete Dial Plan Example:**
+
+```xml
+<P2396>{ <=+61>000 | <0=+61>[23478]xxxxxxxx | <=+61>1[38]xxx+T | <0011=+>xxxx+T | <=+612>[46789]xxxxxxx }</P2396>
+<P2398>{ <=+61>000 | <0=+61>[23478]xxxxxxxx | <=+61>1[38]xxx+T | <0011=+>xxxx+T | <=+612>[46789]xxxxxxx }</P2398>
+```
+
+**P-Code Assignment:**
+- `P2396` = FXS Port 1 dial plan
+- `P2398` = FXS Port 2 dial plan
+- Both ports receive identical dial plan (site-level configuration)
+
+**Limitations:**
+- Maximum entries limited by XML field size (~2048 characters)
+- Complex regex patterns may not translate perfectly
+- No support for advanced regex features (lookahead, etc.)
 
 ## Testing
 
