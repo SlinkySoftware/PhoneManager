@@ -560,15 +560,17 @@ const loadDevices = async () => {
 
 const loadDeviceTypes = async () => {
   const { data } = await api.get('/device-types/');
-  deviceTypes.value = data.map(dt => ({
-    ...dt,
-    label: `${dt.manufacturer} ${dt.model}`
-  }));
+  deviceTypes.value = data
+    .map(dt => ({
+      ...dt,
+      label: `${dt.manufacturer} ${dt.model}`
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 };
 
 const loadSites = async () => {
   const { data } = await api.get('/sites/');
-  sites.value = data;
+  sites.value = data.sort((a, b) => a.name.localeCompare(b.name));
 };
 
 const loadLines = async () => {
@@ -728,8 +730,39 @@ watch(
     const kept = prevLines.slice(0, maxKeep);
     const removed = prevLines.slice(newCount).filter(val => val !== null && val !== undefined);
 
-    // Preserve overlapping config values
-    preserveConfigForType(newType);
+    // Initialize all options with defaults, then preserve existing values
+    const oldConfig = { ...deviceConfigValues.value };
+    
+    // First: Initialize all new device type options with their defaults
+    if (newType?.deviceSpecificOptions?.sections) {
+      newType.deviceSpecificOptions.sections.forEach(section => {
+        section.options?.forEach(option => {
+          // Set default based on option type
+          let defaultValue = option.default;
+          if (option.type === 'orderedmultiselect' || option.type === 'multiselect') {
+            // For multiselect types, default should be an array
+            if (defaultValue === undefined || defaultValue === null) {
+              defaultValue = [];
+            } else if (!Array.isArray(defaultValue)) {
+              defaultValue = [defaultValue];
+            }
+          } else if (defaultValue === undefined || defaultValue === null) {
+            defaultValue = '';
+          }
+          deviceConfigValues.value[option.optionId] = defaultValue;
+        });
+      });
+    }
+    
+    // Second: Preserve existing values that are still valid in the new device type
+    // (only those options that exist in both old and new type)
+    const newOptionIds = optionIdsForType(newType);
+    Object.keys(oldConfig).forEach(key => {
+      if (newOptionIds.has(key)) {
+        // This option exists in the new device type, preserve its value
+        deviceConfigValues.value[key] = oldConfig[key];
+      }
+    });
 
     // Pad or trim line assignments based on new device type
     const updatedLines = [...kept];
@@ -747,7 +780,18 @@ watch(
 const openCreate = () => {
   form.value = emptyForm();
   formLines.value = [];
+  // Initialize device config with defaults from selected device type
   deviceConfigValues.value = {};
+  const deviceType = deviceTypes.value.find(dt => dt.typeId === form.value.device_type_id);
+  if (deviceType?.deviceSpecificOptions?.sections) {
+    deviceType.deviceSpecificOptions.sections.forEach(section => {
+      section.options?.forEach(option => {
+        // Set default based on option type
+        const defaultValue = option.default ?? (option.type === 'orderedmultiselect' || option.type === 'multiselect' ? [] : '');
+        deviceConfigValues.value[option.optionId] = defaultValue;
+      });
+    });
+  }
   passwordFieldsChanged.value = {};
   errorMessage.value = '';
   lineDisassociationWarning.value = '';
@@ -941,7 +985,17 @@ const performResetDeviceOptions = () => {
     selectedDeviceType.value.deviceSpecificOptions.sections.forEach(section => {
       section.options?.forEach(option => {
         // Set default based on option type
-        const defaultValue = option.default ?? (option.type === 'orderedmultiselect' || option.type === 'multiselect' ? [] : '');
+        let defaultValue = option.default;
+        if (option.type === 'orderedmultiselect' || option.type === 'multiselect') {
+          // For multiselect types, default should be an array
+          if (defaultValue === undefined || defaultValue === null) {
+            defaultValue = [];
+          } else if (!Array.isArray(defaultValue)) {
+            defaultValue = [defaultValue];
+          }
+        } else if (defaultValue === undefined || defaultValue === null) {
+          defaultValue = '';
+        }
         deviceConfigValues.value[option.optionId] = defaultValue;
       });
     });
