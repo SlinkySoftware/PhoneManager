@@ -8,7 +8,89 @@ from rest_framework import serializers
 
 from provisioning.registry import get_device_type
 
-from .models import Device, DeviceTypeConfig, Line, SIPServer, Site, UserProfile, mac_validator, normalize_mac
+from .models import Device, DeviceTypeConfig, DialPlan, DialPlanRule, Line, SIPServer, Site, UserProfile, mac_validator, normalize_mac
+from .dialplan_utils import validate_dial_plan_rule
+
+
+class DialPlanRuleSerializer(serializers.ModelSerializer):
+    """Serializer for individual dial plan rules."""
+    class Meta:
+        model = DialPlanRule
+        fields = ["id", "input_regex", "output_regex", "sequence_order"]
+    
+    def validate(self, attrs):
+        """Validate input and output regex patterns."""
+        input_pattern = attrs.get("input_regex", "")
+        output_pattern = attrs.get("output_regex", "")
+        
+        is_valid, error_msg = validate_dial_plan_rule(input_pattern, output_pattern)
+        if not is_valid:
+            raise serializers.ValidationError({
+                "detail": error_msg
+            })
+        
+        return attrs
+
+
+class DialPlanSerializer(serializers.ModelSerializer):
+    """Serializer for dial plans with nested rules."""
+    rules = DialPlanRuleSerializer(many=True, read_only=False, required=False)
+    site_count = serializers.SerializerMethodField()
+    rules_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = DialPlan
+        fields = ["id", "name", "description", "created_at", "updated_at", "rules", "site_count", "rules_count"]
+        read_only_fields = ["created_at", "updated_at"]
+    
+    def get_site_count(self, obj):
+        """Return number of sites using this dial plan."""
+        return obj.sites.count()
+    
+    def get_rules_count(self, obj):
+        """Return number of rules in this dial plan."""
+        return obj.rules.count()
+    
+    def create(self, validated_data):
+        """Create dial plan with nested rules."""
+        rules_data = validated_data.pop("rules", [])
+        dial_plan = DialPlan.objects.create(**validated_data)
+        
+        # Create rules in sequence order, filtering out blank rules
+        seq_order = 1
+        for rule_data in rules_data:
+            # Skip blank rules (missing input or output pattern)
+            if not rule_data.get("input_regex") or not rule_data.get("output_regex"):
+                continue
+            rule_data["sequence_order"] = seq_order
+            DialPlanRule.objects.create(dial_plan=dial_plan, **rule_data)
+            seq_order += 1
+        
+        return dial_plan
+    
+    def update(self, instance, validated_data):
+        """Update dial plan and its rules."""
+        rules_data = validated_data.pop("rules", None)
+        
+        # Update dial plan fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Update rules if provided
+        if rules_data is not None:
+            # Delete existing rules and recreate
+            instance.rules.all().delete()
+            seq_order = 1
+            for rule_data in rules_data:
+                # Skip blank rules (missing input or output pattern)
+                if not rule_data.get("input_regex") or not rule_data.get("output_regex"):
+                    continue
+                rule_data["sequence_order"] = seq_order
+                DialPlanRule.objects.create(dial_plan=instance, **rule_data)
+                seq_order += 1
+        
+        return instance
 
 
 class SIPServerSerializer(serializers.ModelSerializer):
@@ -20,10 +102,11 @@ class SIPServerSerializer(serializers.ModelSerializer):
 class SiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Site
-        fields = "__all__"
+        fields = ["id", "name", "primary_sip_server", "secondary_sip_server", "timezone", "primary_ntp_ip", "secondary_ntp_ip", "dial_plan"]
         extra_kwargs = {
             "primary_ntp_ip": {"allow_blank": True, "allow_null": True, "required": False},
             "secondary_ntp_ip": {"allow_blank": True, "allow_null": True, "required": False},
+            "dial_plan": {"allow_null": True, "required": False},
         }
 
     def validate(self, attrs):

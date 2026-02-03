@@ -10,6 +10,7 @@
           <q-route-tab to="/lines" label="Lines" icon="call" />
           <q-route-tab to="/device-types" label="Device Types" icon="schema" />
           <q-route-tab to="/sip-servers" label="SIP Servers" icon="router" />
+          <q-route-tab to="/dial-plans" label="Dial Plans" icon="transform" />
           <q-route-tab to="/sites" label="Sites" icon="business" />
           <q-route-tab v-if="isAdmin" to="/users" label="Users" icon="people" />
         </q-tabs>

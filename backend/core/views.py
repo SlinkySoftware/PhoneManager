@@ -19,12 +19,14 @@ from rest_framework.response import Response
 import pytz
 
 from .config import config
-from .models import Device, DeviceTypeConfig, Line, SIPServer, Site, UserProfile
+from .dialplan_utils import apply_dial_plan
+from .models import Device, DeviceTypeConfig, DialPlan, Line, SIPServer, Site, UserProfile
 from .permissions import IsAdmin, IsAdminOrReadOnly
 from .saml import SAMLAuthHandler, prepare_django_request
 from .serializers import (
     DeviceSerializer, 
     DeviceTypeConfigSerializer, 
+    DialPlanSerializer,
     LineSerializer, 
     SIPServerSerializer, 
     SiteSerializer,
@@ -725,3 +727,123 @@ class UserViewSet(viewsets.ModelViewSet):
             'detail': 'Password reset successfully',
             'temporary_password': temporary_password
         }, status=status.HTTP_200_OK)
+
+
+class DialPlanViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing dial plans with test function."""
+    
+    queryset = DialPlan.objects.all()
+    serializer_class = DialPlanSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrReadOnly]
+    
+    def get_queryset(self):
+        """Return all dial plans with prefetched rules."""
+        return DialPlan.objects.prefetch_related('rules').all()
+    
+    def destroy(self, request, *args, **kwargs):
+        """Handle delete with foreign key constraint checking."""
+        instance = self.get_object()
+        
+        # Check if dial plan is used by any sites
+        site_count = instance.sites.count()
+        if site_count > 0:
+            return Response(
+                {
+                    'detail': f'Cannot delete this dial plan as it is currently used by {site_count} site(s). '
+                              'Please reassign or remove the dial plan from those sites first.',
+                    'error_code': 'foreign_key_constraint'
+                },
+                status=status.HTTP_409_CONFLICT
+            )
+        
+        try:
+            self.perform_destroy(instance)
+            logger.info(f"Deleted dial plan: {instance.name}")
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except ProtectedError as e:
+            protected_objects = e.protected_objects
+            count = len(protected_objects)
+            return Response(
+                {
+                    'detail': f'Cannot delete this dial plan as it is currently used by {count} related record(s). '
+                              'Please reassign or delete those records first.',
+                    'error_code': 'foreign_key_constraint'
+                },
+                status=status.HTTP_409_CONFLICT
+            )
+        except IntegrityError:
+            return Response(
+                {
+                    'detail': 'Cannot delete this item due to database constraints. '
+                              'It may be referenced by other records.',
+                    'error_code': 'integrity_error'
+                },
+                status=status.HTTP_409_CONFLICT
+            )
+    
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def test(self, request):
+        """Test dial plan transformation on a phone number.
+        
+        POST /api/dial-plans/test/
+        Body: {
+            "dial_plan_id": 1,
+            "input_number": "0289185593"
+        }
+        
+        Returns: {
+            "output": "+61289185593",
+            "matched": true,
+            "matched_rule_index": 0,
+            "matched_rule_pattern": "0X*"
+        }
+        """
+        dial_plan_id = request.data.get('dial_plan_id')
+        input_number = request.data.get('input_number')
+        
+        # Validate input
+        if not dial_plan_id:
+            return Response(
+                {'detail': 'dial_plan_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not input_number:
+            return Response(
+                {'detail': 'input_number is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get dial plan
+        try:
+            dial_plan = DialPlan.objects.prefetch_related('rules').get(id=dial_plan_id)
+        except DialPlan.DoesNotExist:
+            return Response(
+                {'detail': f'Dial plan with id {dial_plan_id} not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get rules in sequence order
+        rules = dial_plan.rules.order_by('sequence_order')
+        
+        # Apply dial plan
+        output, matched_rule_index = apply_dial_plan(input_number, rules)
+        
+        # Build response
+        if matched_rule_index is not None:
+            matched_rule = rules.get(sequence_order=matched_rule_index)
+            response_data = {
+                'output': output,
+                'matched': True,
+                'matched_rule_index': matched_rule_index,
+                'matched_rule_pattern': matched_rule.input_regex
+            }
+        else:
+            response_data = {
+                'output': output,
+                'matched': False
+            }
+        
+        logger.info(f"Tested dial plan '{dial_plan.name}' on '{input_number}' -> '{output}'")
+        
+        return Response(response_data, status=status.HTTP_200_OK)

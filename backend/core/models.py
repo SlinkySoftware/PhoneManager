@@ -78,6 +78,37 @@ class SIPServer(models.Model):
         return f"{self.name} ({self.host}:{self.port}/{self.transport})"
 
 
+class DialPlan(models.Model):
+    """Dial plan for phone number transformation rules."""
+    name = models.CharField(max_length=128, unique=True, help_text="Dial plan name")
+    description = models.TextField(blank=True, help_text="Description of dial plan purpose")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class DialPlanRule(models.Model):
+    """Individual transformation rule within a dial plan."""
+    dial_plan = models.ForeignKey(DialPlan, on_delete=models.CASCADE, related_name="rules")
+    input_regex = models.CharField(max_length=512, help_text="Input pattern (standard format with X, *, [], [^], ())")
+    output_regex = models.CharField(max_length=512, help_text="Output pattern with $1, $2, etc. for capture groups")
+    sequence_order = models.PositiveIntegerField(default=0, help_text="Rule execution order (ascending)")
+
+    class Meta:
+        ordering = ["dial_plan", "sequence_order"]
+        constraints = [
+            UniqueConstraint(fields=["dial_plan", "sequence_order"], name="unique_dial_plan_rule_order"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.dial_plan.name} - Rule {self.sequence_order}"
+
+
 class Site(models.Model):
     name = models.CharField(max_length=128, unique=True)
     primary_sip_server = models.ForeignKey(SIPServer, on_delete=models.PROTECT, related_name="primary_sites")
@@ -99,6 +130,14 @@ class Site(models.Model):
         null=True,
         blank=True,
         help_text="Secondary NTP server IP address"
+    )
+    dial_plan = models.ForeignKey(
+        DialPlan,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sites",
+        help_text="Dial plan for phone number transformation at this site"
     )
 
     class Meta:

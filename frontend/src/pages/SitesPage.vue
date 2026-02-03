@@ -98,6 +98,17 @@
             :disable="isReadOnly"
           />
           <q-select
+            v-model="form.dial_plan"
+            :options="dialPlanOptions"
+            label="Dial Plan (optional)"
+            dense
+            outlined
+            emit-value
+            map-options
+            clearable
+            :disable="isReadOnly"
+          />
+          <q-select
             v-model="form.timezone"
             :options="timezoneOptions"
             label="Timezone"
@@ -166,6 +177,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import api from '../api';
+import { dialPlanService } from '../services/dialPlanService';
 import { useAuthStore } from '../stores/auth';
 
 const authStore = useAuthStore();
@@ -177,6 +189,7 @@ const allTimezones = ref([]);
 const sites = ref([]);
 const devices = ref([]);
 const sipServers = ref([]);
+const dialPlans = ref([]);
 const loading = ref(false);
 const dialog = ref(false);
 const formRef = ref(null);
@@ -190,6 +203,7 @@ const emptyForm = () => ({
   name: '', 
   primary_sip_server: null, 
   secondary_sip_server: null,
+  dial_plan: null,
   timezone: 'UTC',
   primary_ntp_ip: '',
   secondary_ntp_ip: ''
@@ -208,6 +222,11 @@ const columns = [
 const serverOptions = computed(() =>
   sipServers.value.map((s) => ({ label: `${s.name} (${s.host}:${s.port})`, value: s.id }))
 );
+
+const dialPlanOptions = computed(() => [
+  { label: '— None —', value: null },
+  ...dialPlans.value.sort((a, b) => a.name.localeCompare(b.name)).map((dp) => ({ label: dp.name, value: dp.id }))
+]);
 
 const serverMap = computed(() => Object.fromEntries(sipServers.value.map((s) => [s.id, s])));
 
@@ -253,6 +272,15 @@ const filterTimezones = (val, update) => {
 const loadSipServers = async () => {
   const { data } = await api.get('/sip-servers/');
   sipServers.value = data;
+};
+
+const loadDialPlans = async () => {
+  try {
+    const response = await dialPlanService.list();
+    dialPlans.value = response.data;
+  } catch (error) {
+    console.error('Error loading dial plans:', error);
+  }
 };
 
 const loadTimezones = async () => {
@@ -334,6 +362,9 @@ const save = async () => {
     if (!payload.secondary_sip_server) {
       payload.secondary_sip_server = null;
     }
+    if (!payload.dial_plan) {
+      payload.dial_plan = null;
+    }
     if (payload.id) {
       await api.put(`/sites/${payload.id}/`, payload);
     } else {
@@ -377,6 +408,6 @@ const siteUsageMap = computed(() => {
 const siteUsage = (siteId) => siteUsageMap.value[siteId] || [];
 
 onMounted(async () => {
-  await Promise.all([loadSipServers(), loadTimezones(), loadSites(), loadDevices()]);
+  await Promise.all([loadSipServers(), loadDialPlans(), loadTimezones(), loadSites(), loadDevices()]);
 });
 </script>
