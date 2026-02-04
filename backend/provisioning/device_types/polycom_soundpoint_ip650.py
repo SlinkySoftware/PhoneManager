@@ -2,10 +2,12 @@
 # Copyright (c) 2026 Slinky Software
 
 """Polycom SoundPoint IP650 device type renderer."""
-from typing import Any, Dict, Tuple
-from datetime import datetime
+from typing import Any, Dict
+import calendar
+from datetime import datetime, timedelta
 from xml.sax.saxutils import escape
 import pytz
+from pytz import AmbiguousTimeError, NonExistentTimeError
 
 from .base import DeviceType
 
@@ -30,7 +32,6 @@ CODEC_G711MU_PRIORITY = "audio.codecs.G711_Mu.priority"
 CODEC_G729AB_PRIORITY = "audio.codecs.G729_AB.priority"
 
 # UI strings (constants to avoid duplication)
-LINE_LABEL = "Line Label"
 RING_TONE = "Ring Tone"
 DEFAULT_DATE_FORMAT = "DD/MM/YYYY"
 
@@ -135,21 +136,12 @@ COMMON_OPTIONS = {
             "uiOrder": 3,
             "options": [
                 {
-                    "optionId": "sip_transport",
-                    "friendlyName": "SIP Transport Protocol",
-                    "default": "UDP",
-                    "mandatory": False,
-                    "type": "select",
-                    "uiOrder": 1,
-                    "options": ["UDP", "TCP"],
-                },
-                {
                     "optionId": "sip_register_expires",
                     "friendlyName": "SIP Registration Expiry (seconds)",
                     "default": 3600,
                     "mandatory": False,
                     "type": "number",
-                    "uiOrder": 2,
+                    "uiOrder": 1,
                 },
                 {
                     "optionId": "sip_retry_timeout",
@@ -157,7 +149,7 @@ COMMON_OPTIONS = {
                     "default": 30,
                     "mandatory": False,
                     "type": "number",
-                    "uiOrder": 3,
+                    "uiOrder": 2,
                 },
             ],
         },
@@ -209,21 +201,21 @@ DEVICE_OPTIONS = {
             "uiOrder": 2,
             "options": [
                 {
-                    "optionId": "line_1_label",
-                    "friendlyName": LINE_LABEL,
-                    "default": "",
-                    "mandatory": False,
-                    "type": "text",
-                    "uiOrder": 1,
-                },
-                {
                     "optionId": "line_1_ring_tone",
                     "friendlyName": RING_TONE,
                     "default": "Low Trill",
                     "mandatory": False,
                     "type": "select",
-                    "uiOrder": 2,
+                    "uiOrder": 1,
                     "options": RING_TONES,
+                },
+                {
+                    "optionId": "line_1_keys",
+                    "friendlyName": "Keys per Line",
+                    "default": 1,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 2,
                 },
             ],
         },
@@ -232,21 +224,21 @@ DEVICE_OPTIONS = {
             "uiOrder": 3,
             "options": [
                 {
-                    "optionId": "line_2_label",
-                    "friendlyName": LINE_LABEL,
-                    "default": "",
-                    "mandatory": False,
-                    "type": "text",
-                    "uiOrder": 1,
-                },
-                {
                     "optionId": "line_2_ring_tone",
                     "friendlyName": RING_TONE,
                     "default": "Low Trill",
                     "mandatory": False,
                     "type": "select",
-                    "uiOrder": 2,
+                    "uiOrder": 1,
                     "options": RING_TONES,
+                },
+                {
+                    "optionId": "line_2_keys",
+                    "friendlyName": "Keys per Line",
+                    "default": 1,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 2,
                 },
             ],
         },
@@ -255,21 +247,21 @@ DEVICE_OPTIONS = {
             "uiOrder": 4,
             "options": [
                 {
-                    "optionId": "line_3_label",
-                    "friendlyName": LINE_LABEL,
-                    "default": "",
-                    "mandatory": False,
-                    "type": "text",
-                    "uiOrder": 1,
-                },
-                {
                     "optionId": "line_3_ring_tone",
                     "friendlyName": RING_TONE,
                     "default": "Low Trill",
                     "mandatory": False,
                     "type": "select",
-                    "uiOrder": 2,
+                    "uiOrder": 1,
                     "options": RING_TONES,
+                },
+                {
+                    "optionId": "line_3_keys",
+                    "friendlyName": "Keys per Line",
+                    "default": 1,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 2,
                 },
             ],
         },
@@ -278,21 +270,21 @@ DEVICE_OPTIONS = {
             "uiOrder": 5,
             "options": [
                 {
-                    "optionId": "line_4_label",
-                    "friendlyName": LINE_LABEL,
-                    "default": "",
-                    "mandatory": False,
-                    "type": "text",
-                    "uiOrder": 1,
-                },
-                {
                     "optionId": "line_4_ring_tone",
                     "friendlyName": RING_TONE,
                     "default": "Low Trill",
                     "mandatory": False,
                     "type": "select",
-                    "uiOrder": 2,
+                    "uiOrder": 1,
                     "options": RING_TONES,
+                },
+                {
+                    "optionId": "line_4_keys",
+                    "friendlyName": "Keys per Line",
+                    "default": 1,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 2,
                 },
             ],
         },
@@ -301,21 +293,21 @@ DEVICE_OPTIONS = {
             "uiOrder": 6,
             "options": [
                 {
-                    "optionId": "line_5_label",
-                    "friendlyName": LINE_LABEL,
-                    "default": "",
-                    "mandatory": False,
-                    "type": "text",
-                    "uiOrder": 1,
-                },
-                {
                     "optionId": "line_5_ring_tone",
                     "friendlyName": RING_TONE,
                     "default": "Low Trill",
                     "mandatory": False,
                     "type": "select",
-                    "uiOrder": 2,
+                    "uiOrder": 1,
                     "options": RING_TONES,
+                },
+                {
+                    "optionId": "line_5_keys",
+                    "friendlyName": "Keys per Line",
+                    "default": 1,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 2,
                 },
             ],
         },
@@ -324,21 +316,21 @@ DEVICE_OPTIONS = {
             "uiOrder": 7,
             "options": [
                 {
-                    "optionId": "line_6_label",
-                    "friendlyName": LINE_LABEL,
-                    "default": "",
-                    "mandatory": False,
-                    "type": "text",
-                    "uiOrder": 1,
-                },
-                {
                     "optionId": "line_6_ring_tone",
                     "friendlyName": RING_TONE,
                     "default": "Low Trill",
                     "mandatory": False,
                     "type": "select",
-                    "uiOrder": 2,
+                    "uiOrder": 1,
                     "options": RING_TONES,
+                },
+                {
+                    "optionId": "line_6_keys",
+                    "friendlyName": "Keys per Line",
+                    "default": 1,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 2,
                 },
             ],
         },
@@ -361,58 +353,131 @@ class PolycomSoundPointIP650(DeviceType):
     DeviceSpecificOptions = DEVICE_OPTIONS
     ContentType = "application/xml"
 
-    def _get_gmt_offset(self, timezone_str: str) -> int:
-        """Calculate GMT offset in seconds for a given timezone.
+    def _get_gmt_offset(self, timezone_str: str) -> str:
+        """Calculate standard GMT offset in hours for a given timezone.
         
         Args:
             timezone_str: Timezone string (e.g., 'America/New_York')
             
         Returns:
-            Offset in seconds from GMT
+            Offset in hours from GMT (string, may be fractional)
         """
         try:
             tz = pytz.timezone(timezone_str)
-            now = datetime.now(tz)
-            utc_offset = now.utcoffset()
-            if utc_offset is not None:
-                return int(utc_offset.total_seconds())
-            return 0
+            year = datetime.now().year
+            offsets = []
+            standard_offsets = []
+            for month in range(1, 13):
+                sample = datetime(year, month, 15, 12, 0, 0)
+                local = tz.localize(sample, is_dst=None)
+                offset = local.utcoffset() or timedelta(0)
+                offsets.append(offset)
+                if (local.dst() or timedelta(0)) == timedelta(0):
+                    standard_offsets.append(offset)
+            base_offset = standard_offsets[0] if standard_offsets else min(offsets, default=timedelta(0))
+            hours = base_offset.total_seconds() / 3600
+            return f"{hours:g}"
         except Exception:
-            return 0  # Default to GMT if timezone invalid
+            return "0"  # Default to GMT if timezone invalid
 
-    def _calculate_dst_rules(self, timezone_str: str) -> Tuple[str, str, str, str]:
+    def _calculate_dst_rules(self, timezone_str: str) -> Dict[str, str]:
         """Calculate DST start/end rules for a timezone.
         
         Returns:
-            Tuple of (dst_start_month, dst_start_day, dst_stop_month, dst_stop_day)
-            where day is formatted as: week/day_of_week (e.g., "8/1" for 2nd Sunday)
-            Week values: 1, 8, 15, 22 for 1st-4th occurrence
+            Dict of DST rule fields for Polycom.
         """
         try:
-            # Use a simple heuristic: check if DST is in effect in March and October
-            # This works for most regions (Northern Hemisphere)
             tz = pytz.timezone(timezone_str)
             year = datetime.now().year
-            
-            # Check March 15 and October 15 to detect DST changes
-            march_date = datetime(year, 3, 15, 12, 0, 0)
-            october_date = datetime(year, 10, 15, 12, 0, 0)
-            
-            march_tz = tz.localize(march_date)
-            october_tz = tz.localize(october_date)
-            
-            march_offset = march_tz.utcoffset()
-            october_offset = october_tz.utcoffset()
-            
-            if march_offset != october_offset:
-                # DST exists - return standard DST dates for Northern Hemisphere
-                # 2nd Sunday in March (start) and 1st Sunday in November (end)
-                return ("3", "8/1", "11", "1/1")
+            start_transition = None
+            stop_transition = None
+            last_dst = None
+
+            start_date = datetime(year, 1, 1, 0, 0, 0)
+            for hour_offset in range(0, 366 * 24):
+                naive = start_date + timedelta(hours=hour_offset)
+                try:
+                    local = tz.localize(naive, is_dst=None)
+                except (AmbiguousTimeError, NonExistentTimeError):
+                    try:
+                        local = tz.localize(naive, is_dst=True)
+                    except Exception:
+                        continue
+
+                dst_offset = local.dst() or timedelta(0)
+                if last_dst is None:
+                    last_dst = dst_offset
+                    continue
+
+                if dst_offset != last_dst:
+                    if dst_offset > last_dst:
+                        start_transition = local
+                    else:
+                        stop_transition = local
+                    last_dst = dst_offset
+                    if start_transition and stop_transition:
+                        break
+
+            if not start_transition or not stop_transition:
+                return {
+                    "enable": "0",
+                    "start_day_of_week": "1",
+                    "start_month": "1",
+                    "start_time": "00:00",
+                    "start_date": "1",
+                    "start_last_in_month": "0",
+                    "stop_day_of_week": "1",
+                    "stop_month": "1",
+                    "stop_time": "00:00",
+                    "stop_date": "1",
+                    "stop_last_in_month": "0",
+                }
+
+            def build_rule(dt: datetime) -> Dict[str, str]:
+                day_of_week = ((dt.weekday() + 1) % 7) + 1  # Sunday=1
+                day = dt.day
+                week_index = (day - 1) // 7
+                week_value = 1 + min(week_index, 3) * 7
+                days_in_month = calendar.monthrange(dt.year, dt.month)[1]
+                last_in_month = "1" if day + 7 > days_in_month else "0"
+                return {
+                    "day_of_week": str(day_of_week),
+                    "month": str(dt.month),
+                    "time": dt.strftime("%H:%M"),
+                    "date": str(week_value),
+                    "last_in_month": last_in_month,
+                }
+
+            start_rule = build_rule(start_transition)
+            stop_rule = build_rule(stop_transition)
+
+            return {
+                "enable": "1",
+                "start_day_of_week": start_rule["day_of_week"],
+                "start_month": start_rule["month"],
+                "start_time": start_rule["time"],
+                "start_date": start_rule["date"],
+                "start_last_in_month": start_rule["last_in_month"],
+                "stop_day_of_week": stop_rule["day_of_week"],
+                "stop_month": stop_rule["month"],
+                "stop_time": stop_rule["time"],
+                "stop_date": stop_rule["date"],
+                "stop_last_in_month": stop_rule["last_in_month"],
+            }
         except Exception:
-            pass
-        
-        # Default: no DST
-        return ("1", "1/1", "1", "1/1")
+            return {
+                "enable": "0",
+                "start_day_of_week": "1",
+                "start_month": "1",
+                "start_time": "00:00",
+                "start_date": "1",
+                "start_last_in_month": "0",
+                "stop_day_of_week": "1",
+                "stop_month": "1",
+                "stop_time": "00:00",
+                "stop_date": "1",
+                "stop_last_in_month": "0",
+            }
 
     def _convert_dial_plan(self, dial_plan_str: str) -> str:
         """Convert internal dial plan format to Polycom format.
@@ -438,10 +503,19 @@ class PolycomSoundPointIP650(DeviceType):
         Returns:
             XML configuration string with <ALL> tag containing all attributes
         """
-        # Get configuration values
-        config = device.device_specific_configuration or {}
+        # Get configuration values (decrypt password fields)
+        config = device.get_decrypted_device_config()
         site = device.site
-        lines = list(device.lines.all())
+        lines = []
+        seen_line_ids = set()
+        if device.line_1:
+            lines.append(device.line_1)
+            seen_line_ids.add(device.line_1.id)
+        for extra_line in device.lines.all().order_by("directory_number"):
+            if extra_line.id in seen_line_ids:
+                continue
+            lines.append(extra_line)
+            seen_line_ids.add(extra_line.id)
         
         # Get common options
         clock_24hour = config.get("clock_24hour", True)
@@ -451,7 +525,6 @@ class PolycomSoundPointIP650(DeviceType):
         syslog_facility = config.get("syslog_facility", 16)
         syslog_render_level = config.get("syslog_renderLevel", 2)
         codec_priority_order = config.get("codec_priority_order", [CODEC_G722, CODEC_G711A, CODEC_G711MU])
-        sip_transport = config.get("sip_transport", "UDP")
         sip_register_expires = config.get("sip_register_expires", 3600)
         sip_retry_timeout = config.get("sip_retry_timeout", 30)
         
@@ -469,15 +542,11 @@ class PolycomSoundPointIP650(DeviceType):
         # Calculate timezone info
         timezone_str = site.timezone if site else "UTC"
         gmt_offset = self._get_gmt_offset(timezone_str)
-        dst_start_month, dst_start_day, dst_stop_month, dst_stop_day = self._calculate_dst_rules(timezone_str)
+        dst_rules = self._calculate_dst_rules(timezone_str)
         
         # Map syslog transport
         syslog_transport_map = {"UDP": 1, "TCP": 2, "TLS": 3}
         syslog_transport_value = syslog_transport_map.get(syslog_transport, 1)
-        
-        # Map SIP transport
-        sip_transport_map = {"UDP": 1, "TCP": 4}
-        sip_transport_value = sip_transport_map.get(sip_transport, 1)
         
         # Convert retry timeout to milliseconds
         sip_retry_timeout_ms = sip_retry_timeout * 1000
@@ -513,32 +582,25 @@ class PolycomSoundPointIP650(DeviceType):
             "lcl.datetime.date.format": escape(date_format),
             
             # Timezone
-            "tcpIpApp.sntp.gmtOffset": str(gmt_offset),
+            "device.sntp.gmtOffset": gmt_offset,
             "tcpIpApp.sntp.resyncPeriod": "14400",
-            "tcpIpApp.sntp.daylightSavings.enable": "1",
-            "tcpIpApp.sntp.daylightSavings.start.month": dst_start_month,
-            "tcpIpApp.sntp.daylightSavings.start.date": dst_start_day,
-            "tcpIpApp.sntp.daylightSavings.stop.month": dst_stop_month,
-            "tcpIpApp.sntp.daylightSavings.stop.date": dst_stop_day,
+            "tcpIpApp.sntp.daylightSavings.enable": dst_rules["enable"],
+            "tcpIpApp.sntp.daylightSavings.start.dayOfWeek": dst_rules["start_day_of_week"],
+            "tcpIpApp.sntp.daylightSavings.start.month": dst_rules["start_month"],
+            "tcpIpApp.sntp.daylightSavings.start.time": dst_rules["start_time"],
+            "tcpIpApp.sntp.daylightSavings.start.date": dst_rules["start_date"],
+            "tcpIpApp.sntp.daylightSavings.start.dayOfWeek.lastInMonth": dst_rules["start_last_in_month"],
+            "tcpIpApp.sntp.daylightSavings.stop.dayOfWeek": dst_rules["stop_day_of_week"],
+            "tcpIpApp.sntp.daylightSavings.stop.month": dst_rules["stop_month"],
+            "tcpIpApp.sntp.daylightSavings.stop.time": dst_rules["stop_time"],
+            "tcpIpApp.sntp.daylightSavings.stop.date": dst_rules["stop_date"],
+            "tcpIpApp.sntp.daylightSavings.stop.dayOfWeek.lastInMonth": dst_rules["stop_last_in_month"],
             
             # NTP server
             "tcpIpApp.sntp.address": escape(site.primary_ntp_ip or "") if site else "",
             
-            # Syslog
-            "device.syslog.serverName": escape(syslog_server),
-            "device.syslog.transport": str(syslog_transport_value),
-            "device.syslog.facility": str(syslog_facility),
-            "device.syslog.renderLevel": str(syslog_render_level),
-            
             # Tag serial number (hard-coded)
             "log.render.file.tagSerialNo": "1",
-            
-            # SIP parameters
-            "tcpIpApp.port.sip.transport": str(sip_transport_value),
-            "voIpProt.SIP.serverFeatureControl.dndOnCodeEnabled": "1",
-            "voIpProt.SIP.serverFeatureControl.dndOffCodeEnabled": "1",
-            "voIpProt.SIP.serverFeatureControl.cfwdOnCodeEnabled": "1",
-            "voIpProt.SIP.serverFeatureControl.cfwdOffCodeEnabled": "1",
             
             # Codecs
             CODEC_G722_PRIORITY: str(codec_priorities[CODEC_G722_PRIORITY]),
@@ -554,8 +616,12 @@ class PolycomSoundPointIP650(DeviceType):
             "dialplan.digitmap.timeOut": "3",
         }
         
-        # Conditionally add syslog.prependMac only if syslog_server is not empty
+        # Syslog options only when serverName is defined
         if syslog_server:
+            attrs["device.syslog.serverName"] = escape(syslog_server)
+            attrs["device.syslog.transport"] = str(syslog_transport_value)
+            attrs["device.syslog.facility"] = str(syslog_facility)
+            attrs["device.syslog.renderLevel"] = str(syslog_render_level)
             attrs["device.syslog.prependMac"] = "1"
         
         # Add SIP server from site
@@ -582,9 +648,13 @@ class PolycomSoundPointIP650(DeviceType):
                 attrs[f"reg.{line_num}.auth.password"] = escape(line.registration_password or "")
                 attrs[f"reg.{line_num}.type"] = "shared" if line.is_shared else "private"
                 
-                # Line label from device config or line phone_label
-                line_label = config.get(f"line_{line_num}_label", "") or line.phone_label or ""
+                # Line label from line.phone_label or fallback to line.name
+                line_label = line.phone_label or line.name or ""
                 attrs[f"reg.{line_num}.label"] = escape(line_label)
+                
+                # Line keys per line
+                line_keys = config.get(f"line_{line_num}_keys", 1)
+                attrs[f"reg.{line_num}.lineKeys"] = str(line_keys)
                 
                 # Ring tone
                 ring_tone_label = config.get(f"line_{line_num}_ring_tone", "Low Trill")
@@ -596,10 +666,12 @@ class PolycomSoundPointIP650(DeviceType):
                     ring_tone_value = ring_tone_enum_values[ring_tone_index]
                 attrs[f"se.rt.{line_num}.name"] = str(ring_tone_value)
                 
-                # Dial plan (if available)
+                # Dial plan (if available and supported)
                 if site and site.dial_plan:
-                    dial_plan = self._convert_dial_plan(site.dial_plan.pattern or "")
-                    attrs[f"dialplan.{line_num}.digitmap"] = escape(dial_plan)
+                    dial_plan_value = getattr(site.dial_plan, "pattern", "") or ""
+                    if dial_plan_value:
+                        dial_plan = self._convert_dial_plan(dial_plan_value)
+                        attrs[f"dialplan.{line_num}.digitmap"] = escape(dial_plan)
             else:
                 # Disable unused line
                 attrs[f"reg.{line_num}.server.1.register"] = "0"
