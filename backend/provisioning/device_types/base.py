@@ -6,6 +6,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict
 
+from core.config import config
+
 
 @dataclass
 class DeviceType:
@@ -22,3 +24,18 @@ class DeviceType:
     def render(self, device: Any) -> str:
         """Render configuration text for a fully-populated Device instance."""
         raise NotImplementedError
+
+    def get_provisioning_base_url(self) -> str:
+        """Return normalized provisioning base URL from config.
+
+        Raises:
+            ValueError: If PROVISIONING_BASE_URL is missing or empty.
+        """
+        raw_url = config.get("PROVISIONING_BASE_URL", env_var="PROVISIONING_BASE_URL")
+        normalized = (raw_url or "").strip().rstrip("/")
+        if not normalized:
+            raise ValueError(
+                'Please set "PROVISIONING_BASE_URL" in configuration to the absolute URL '
+                "for the provisioning endpoint."
+            )
+        return normalized

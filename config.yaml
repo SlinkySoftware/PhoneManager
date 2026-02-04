@@ -9,6 +9,11 @@
 # Can also be set via ENCRYPTION_KEY environment variable
 ENCRYPTION_KEY: "change-this-to-a-secure-random-key-in-production"
 
+# Provisioning Endpoint Base URL
+# Absolute URL to the unauthenticated provisioning endpoint (e.g. http://provision.example.com/provision)
+# Can also be set via PROVISIONING_BASE_URL environment variable
+PROVISIONING_BASE_URL: ""
+
 # SSO/SAML Configuration
 SSO_ENABLED: false
 
