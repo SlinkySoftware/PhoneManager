@@ -911,6 +911,10 @@ class YealinkW70BDECT(DeviceType):
     CommonOptions = COMMON_OPTIONS
     DeviceSpecificOptions = DEVICE_OPTIONS
     ContentType = "text/plain"
+    UserAgentPatterns = (
+        r"Yealink[/ ]W70B",
+        r"W70B",
+    )
 
     def render(self, device: Any) -> str:
         # Pull decrypted device-specific configuration (includes admin password)

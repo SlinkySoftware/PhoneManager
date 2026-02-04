@@ -523,6 +523,9 @@ class YealinkSIPT33G(DeviceType):
     CommonOptions = COMMON_OPTIONS
     DeviceSpecificOptions = DEVICE_OPTIONS
     ContentType = "text/plain"
+    UserAgentPatterns = (
+        r"Yealink[/ ]SIP[- ]?T33G",
+    )
 
     def render(self, device: Any) -> str:
         # Pull decrypted device-specific configuration (includes admin password)

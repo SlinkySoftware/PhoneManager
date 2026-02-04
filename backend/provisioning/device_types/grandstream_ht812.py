@@ -359,6 +359,10 @@ class GrandstreamHT812(DeviceType):
     CommonOptions = COMMON_OPTIONS
     DeviceSpecificOptions = DEVICE_OPTIONS
     ContentType = "text/xml"
+    UserAgentPatterns = (
+        r"Grandstream HT812",
+        r"HT812",
+    )
 
     def _mac_nocolon(self, mac: str) -> str:
         return mac.replace(":", "").replace("-", "").upper()

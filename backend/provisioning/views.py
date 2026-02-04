@@ -2,6 +2,8 @@
 # Copyright (c) 2026 Slinky Software
 
 """Provisioning-facing views and device type API endpoints."""
+import logging
+import re
 from typing import Any, Dict
 
 from django.http import Http404, HttpResponse
@@ -13,6 +15,9 @@ from rest_framework.response import Response
 from core.models import Device, DeviceTypeConfig, normalize_mac
 from core.serializers import DeviceTypeConfigSerializer
 from .registry import get_device_type, list_device_types
+
+
+logger = logging.getLogger(__name__)
 
 
 class DeviceTypeSerializer(serializers.Serializer):
@@ -67,6 +72,25 @@ class ProvisioningViewSet(viewsets.ViewSet):
         if not device_type_cls:
             return HttpResponse("Unsupported device type", status=status.HTTP_404_NOT_FOUND)
 
+        user_agent = request.headers.get("User-Agent", "")
+        patterns = getattr(device_type_cls, "UserAgentPatterns", ())
+        if patterns:
+            matches = any(re.search(pattern, user_agent or "", re.IGNORECASE) for pattern in patterns)
+            if not matches:
+                logger.warning(
+                    "Provisioning User-Agent mismatch mac=%s device_type=%s user_agent=%s",
+                    mac,
+                    device.device_type_id,
+                    user_agent,
+                )
+                return Response(
+                    {
+                        "detail": "Provisioning request User-Agent does not match expected device type.",
+                        "error_code": "user_agent_mismatch",
+                    },
+                    status=status.HTTP_406_NOT_ACCEPTABLE,
+                )
+
         # Create a proxy device object with decrypted configuration
         # This ensures renderers receive plaintext passwords
         class DecryptedDevice:
@@ -90,6 +114,7 @@ class ProvisioningViewSet(viewsets.ViewSet):
             CommonOptions=device_type_cls.CommonOptions,
             DeviceSpecificOptions=device_type_cls.DeviceSpecificOptions,
             ContentType=device_type_cls.ContentType,
+            UserAgentPatterns=device_type_cls.UserAgentPatterns,
         )
         config_text = renderer.render(decrypted_device)
         

@@ -352,6 +352,10 @@ class PolycomSoundPointIP650(DeviceType):
     CommonOptions = COMMON_OPTIONS
     DeviceSpecificOptions = DEVICE_OPTIONS
     ContentType = "application/xml"
+    UserAgentPatterns = (
+        r"PolycomSoundPointIP",
+        r"SPIP[_-]?650",
+    )
 
     def _get_gmt_offset(self, timezone_str: str) -> str:
         """Calculate standard GMT offset in hours for a given timezone.

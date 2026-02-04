@@ -4,7 +4,7 @@
 """Base device type renderer contract."""
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from core.config import config
 
@@ -20,6 +20,7 @@ class DeviceType:
     CommonOptions: Dict[str, Any]
     DeviceSpecificOptions: Dict[str, Any]
     ContentType: str = "text/plain"  # HTTP Content-Type for rendered configuration
+    UserAgentPatterns: Tuple[str, ...] = ()
 
     def render(self, device: Any) -> str:
         """Render configuration text for a fully-populated Device instance."""
