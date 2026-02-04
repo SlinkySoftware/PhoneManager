@@ -138,7 +138,11 @@
                   dense
                   outlined
                   :disable="isReadOnly"
-                  :rules="[val => !!val || 'Input pattern is required']"
+                  :rules="[
+                    val => !!val || 'Input pattern is required',
+                    val => countCaptureGroups(val) <= 1 || 'Only one capture group is allowed',
+                    val => validateInputPattern(val)
+                  ]"
                 />
               </q-td>
             </template>
@@ -149,7 +153,12 @@
                   dense
                   outlined
                   :disable="isReadOnly"
-                  :rules="[val => !!val || 'Output pattern is required']"
+                  :rules="[
+                    val => !!val || 'Output pattern is required',
+                    val => validateOutputPattern(val),
+                    val => hasOnlyAllowedDollar(val) || 'Only $1 is allowed in output',
+                    val => validateOutputAgainstInput(props.row.input_regex, val)
+                  ]"
                 />
               </q-td>
             </template>
@@ -310,6 +319,107 @@ const ruleColumns = [
   { name: 'output_regex', label: 'Output Pattern', align: 'left' },
   { name: 'actions', label: '', align: 'right', style: 'width: 60px' }
 ];
+
+const countCaptureGroups = (pattern) => {
+  if (!pattern) return 0;
+  let count = 0;
+  let escaped = false;
+  for (const char of pattern) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '(') {
+      count += 1;
+    }
+  }
+  return count;
+};
+
+const hasCaptureGroup = (pattern) => countCaptureGroups(pattern) > 0;
+
+const hasOnlyAllowedDollar = (output) => {
+  if (!output) return true;
+  const dollars = output.match(/\$/g);
+  if (!dollars) return true;
+  return /^(?:[^$]*\$1)*[^$]*$/.test(output);
+};
+
+const validateOutputAgainstInput = (input, output) => {
+  const inputHasCapture = hasCaptureGroup(input);
+  const outputHasCapture = /\$1/.test(output || '');
+  if (inputHasCapture && !outputHasCapture) {
+    return 'Output must reference $1 when input uses a capture group';
+  }
+  if (!inputHasCapture && outputHasCapture) {
+    return 'Output cannot reference $1 without a capture group';
+  }
+  return true;
+};
+
+const validateInputPattern = (pattern) => {
+  if (!pattern) return true;
+  const caretCount = (pattern.match(/\^/g) || []).length;
+  if (caretCount > 1 || (caretCount === 1 && !pattern.startsWith('^'))) {
+    return 'Caret (^) is only allowed at the start';
+  }
+  const dollarCount = (pattern.match(/\$/g) || []).length;
+  if (dollarCount > 1 || (dollarCount === 1 && !pattern.endsWith('$'))) {
+    return 'Dollar ($) is only allowed at the end';
+  }
+
+  const openParenCount = (pattern.match(/\(/g) || []).length;
+  const closeParenCount = (pattern.match(/\)/g) || []).length;
+  if (openParenCount !== closeParenCount) {
+    return 'Capture group parentheses must be balanced';
+  }
+  if (openParenCount > 1) {
+    return 'Only one capture group is allowed';
+  }
+
+  const starCount = (pattern.match(/\*/g) || []).length;
+  if (starCount > 1) {
+    return 'Only one * is allowed';
+  }
+  if (starCount === 1) {
+    const normalized = pattern.replace(/[()]/g, '');
+    if (!normalized.endsWith('*')) {
+      return '* must be the last character (excluding grouping)';
+    }
+  }
+
+  const allowedChars = /^[0-9+\[\]^-\$()*]+$/;
+  if (!allowedChars.test(pattern)) {
+    return 'Only digits, +, [], ^, $, *, and () are allowed';
+  }
+
+  const hasLettersOrSymbols = /[A-Za-z]|[#%{};:'"?\\/|,\.<>]/.test(pattern);
+  if (hasLettersOrSymbols) {
+    return 'Letters and special symbols are not allowed';
+  }
+
+  const bracketContent = pattern.match(/\[[^\]]*\]/g) || [];
+  for (const chunk of bracketContent) {
+    const inner = chunk.slice(1, -1);
+    if (!/^[0-9\-^]+$/.test(inner)) {
+      return 'Only digits, hyphen, or ^ are allowed inside []';
+    }
+  }
+
+  return true;
+};
+
+const validateOutputPattern = (output) => {
+  if (!output) return true;
+  if (/[^0-9+$]/.test(output)) {
+    return 'Output can only contain digits, +, and $1';
+  }
+  return true;
+};
 
 // Error extraction helper
 const extractErrorMessage = (error) => {
