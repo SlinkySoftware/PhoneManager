@@ -715,6 +715,9 @@ class PolycomSoundPointIP650(DeviceType):
         
         # Build attributes dictionary
         attrs = {
+            # We are setting device parameters
+            "device.set": "1",
+
             # Language (hard-coded)
             "lcl.ml.lang": "en-gb",
             
@@ -724,7 +727,8 @@ class PolycomSoundPointIP650(DeviceType):
             "lcl.ml.lang.clock.5.longFormat": "1" if use_long_format else "0",
             
             # Timezone
-            "device.sntp.gmtOffset": str(int(gmt_offset) * 3600),  # device expects in seconds
+            "tcpIpApp.sntp.gmtOffset.overrideDHCP": "1",
+            "tcpIpApp.sntp.gmtOffset": int(gmt_offset) * 3600,  # device expects in seconds
             "tcpIpApp.sntp.resyncPeriod": "14400",
             "tcpIpApp.sntp.daylightSavings.enable": dst_rules["enable"],
             "tcpIpApp.sntp.daylightSavings.start.dayOfWeek": dst_rules["start_day_of_week"],
@@ -740,6 +744,7 @@ class PolycomSoundPointIP650(DeviceType):
             
             # NTP server
             "tcpIpApp.sntp.address": escape(site.primary_ntp_ip or "") if site else "",
+            "tcpIpApp.sntp.address.overrideDHCP": "1" if site.primary_ntp_ip else "0",
             
             # Tag serial number (hard-coded)
             "log.render.file.tagSerialNo": "1",
