@@ -392,7 +392,7 @@ const validateInputPattern = (pattern) => {
     }
   }
 
-  const allowedChars = /^[0-9+\[\]^-\$()*]+$/;
+  const allowedChars = /^[0-9+\[\]^\-\$()*]+$/;
   if (!allowedChars.test(pattern)) {
     return 'Only digits, +, [], ^, $, *, and () are allowed';
   }
