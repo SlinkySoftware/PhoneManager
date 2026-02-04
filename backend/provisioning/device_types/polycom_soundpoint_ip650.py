@@ -6,6 +6,7 @@ from typing import Any, Dict
 import calendar
 from datetime import datetime, timedelta
 from xml.sax.saxutils import escape
+import re
 import pytz
 from pytz import AmbiguousTimeError, NonExistentTimeError
 
@@ -165,6 +166,20 @@ COMMON_OPTIONS = {
                     "type": "orderedmultiselect",
                     "uiOrder": 1,
                     "options": CODEC_CHOICES,
+                },
+            ],
+        },
+        {
+            "friendlyName": "Dial Plan",
+            "uiOrder": 5,
+            "options": [
+                {
+                    "optionId": "inter_digit_timeout",
+                    "friendlyName": "Inter-Digit timeout",
+                    "default": 3,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 1,
                 },
             ],
         },
@@ -483,20 +498,68 @@ class PolycomSoundPointIP650(DeviceType):
                 "stop_last_in_month": "0",
             }
 
-    def _convert_dial_plan(self, dial_plan_str: str) -> str:
-        """Convert internal dial plan format to Polycom format.
-        
+    def _convert_dial_plan_rule(self, input_regex: str, output_regex: str) -> str:
+        """Convert a dial plan rule to a Polycom digitmap entry.
+
         Args:
-            dial_plan_str: Dial plan string (internal format)
-            
+            input_regex: Input regex (standard format with anchors, X, *, [], [^])
+            output_regex: Output regex with $1 substitutions
+
         Returns:
-            Polycom-formatted dial plan string
-            
-        Note:
-            Currently passes through as-is. Can be enhanced to support
-            format conversions between dial plan representations.
+            Polycom digitmap entry string (may include replacement prefix and T suffix).
         """
-        return dial_plan_str or ""
+        if not input_regex:
+            return ""
+
+        raw_input = (input_regex or "").strip()
+        raw_output = (output_regex or "").strip()
+
+        # Remove anchors
+        cleaned = raw_input.replace("^", "").replace("$", "")
+
+        def build_replace(find: str, replace: str) -> str:
+            return f"R{find}R{replace}R"
+
+        def normalize_pattern(pattern: str) -> tuple[str, bool]:
+            if not pattern:
+                return "", False
+            needs_timeout = pattern.endswith("*")
+            if needs_timeout:
+                pattern = pattern[:-1]
+            pattern = pattern.replace("X", "x")
+            return pattern, needs_timeout
+
+        replacement_prefix = ""
+        match_pattern = cleaned
+        timeout_required = False
+
+        capture_match = re.match(r"^([^(]*)\(([^()]*)\)$", cleaned)
+        if capture_match:
+            prefix = capture_match.group(1)
+            captured = capture_match.group(2)
+
+            match_pattern, timeout_required = normalize_pattern(captured)
+
+            if "$1" in raw_output:
+                output_prefix = raw_output.replace("$1", "")
+                if prefix or output_prefix:
+                    replacement_prefix = build_replace(prefix, output_prefix)
+        else:
+            match_pattern, timeout_required = normalize_pattern(cleaned)
+
+            if raw_output and raw_output != cleaned:
+                if raw_output.endswith(match_pattern):
+                    output_prefix = raw_output[: -len(match_pattern)]
+                    replacement_prefix = build_replace("", output_prefix)
+
+        if not match_pattern:
+            return ""
+
+        digitmap = f"{replacement_prefix}{match_pattern}"
+        if timeout_required:
+            digitmap += "T"
+
+        return digitmap
 
     def render(self, device: Any) -> str:
         """Render Polycom SoundPoint IP650 XML configuration.
@@ -531,6 +594,7 @@ class PolycomSoundPointIP650(DeviceType):
         codec_priority_order = config.get("codec_priority_order", [CODEC_G722, CODEC_G711A, CODEC_G711MU])
         sip_register_expires = config.get("sip_register_expires", 3600)
         sip_retry_timeout = config.get("sip_retry_timeout", 30)
+        inter_digit_timeout = int(config.get("inter_digit_timeout", 3))
         
         # Get device-specific options
         admin_password = config.get("admin_password", "")
@@ -616,8 +680,6 @@ class PolycomSoundPointIP650(DeviceType):
             "device.auth.localAdminPassword": escape(admin_password),
             "device.auth.localUserPassword": escape(user_password),
             
-            # Dial plan timeout
-            "dialplan.digitmap.timeOut": "3",
         }
         
         # Syslog options only when serverName is defined
@@ -670,15 +732,24 @@ class PolycomSoundPointIP650(DeviceType):
                     ring_tone_value = ring_tone_enum_values[ring_tone_index]
                 attrs[f"se.rt.{line_num}.name"] = str(ring_tone_value)
                 
-                # Dial plan (if available and supported)
-                if site and site.dial_plan:
-                    dial_plan_value = getattr(site.dial_plan, "pattern", "") or ""
-                    if dial_plan_value:
-                        dial_plan = self._convert_dial_plan(dial_plan_value)
-                        attrs[f"dialplan.{line_num}.digitmap"] = escape(dial_plan)
             else:
                 # Disable unused line
                 attrs[f"reg.{line_num}.server.1.register"] = "0"
+
+        # Dial plan (global digitmap)
+        if site and site.dial_plan:
+            rules = site.dial_plan.rules.all().order_by("sequence_order")
+            digitmaps: list[str] = []
+            for rule in rules:
+                digitmap_entry = self._convert_dial_plan_rule(rule.input_regex, rule.output_regex)
+                if digitmap_entry:
+                    digitmaps.append(digitmap_entry)
+
+            if digitmaps:
+                attrs["dialplan.digitmap"] = escape(f"({ '|'.join(digitmaps) })")
+                attrs["dialplan.digitmap.timeOut"] = "|".join(
+                    str(inter_digit_timeout) for _ in digitmaps
+                )
         
         # Build XML
         xml_lines = ['<?xml version="1.0" encoding="UTF-8"?>']
