@@ -37,12 +37,14 @@ The Phone Provisioning Manager is a high-availability system for managing and pr
 ```
 Device
 ├── mac_address (unique, case-insensitive)
-├── friendly_name
+├── description (CharField, optional)
+├── device_type_id (CharField)
 ├── site (FK → Site)
 ├── line_1 (FK → Line, primary)
 ├── lines (M2M → Line, includes line_1)
 ├── device_specific_configuration (JSON)
 ├── enabled (boolean)
+├── last_provisioned_at (DateTimeField, optional)
 └── timestamps (created, updated)
 
 Site
@@ -52,13 +54,28 @@ Site
 ├── timezone (CharField, pytz choice)
 ├── primary_ntp_ip (GenericIPAddressField, optional)
 ├── secondary_ntp_ip (GenericIPAddressField, optional)
+├── dial_plan (FK → DialPlan, optional)
 └── timestamps (created, updated)
+
+DialPlan
+├── name (unique)
+├── description (TextField, optional)
+├── rules (O2M → DialPlanRule)
+└── timestamps (created, updated)
+
+DialPlanRule
+├── dial_plan (FK → DialPlan)
+├── input_regex (CharField, standard pattern)
+├── output_regex (CharField, replacement with $1, $2)
+├── sequence_order (PositiveIntegerField, execution order)
+└── timestamps (implicit)
 
 Line
 ├── name
 ├── directory_number (unique)
 ├── registration_account
 ├── registration_password
+├── phone_label (CharField, optional - display label on phone)
 ├── is_shared (boolean)
 └── timestamps (created, updated)
 
@@ -322,8 +339,13 @@ class DeviceType:
     Manufacturer = "Vendor"           # Display name
     Model = "Model X"                 # Display model
     NumberOfLines = 4                 # Max concurrent calls
+    ContentType = "text/xml"          # HTTP Content-Type (text/plain, application/xml, etc.)
+    UserAgentPatterns = (             # User-Agent regex patterns for device detection
+        r"VendorPattern1",
+        r"VendorPattern2"
+    )
     
-    CommonOptions = {                 # User-configurable options
+    CommonOptions = {                 # User-configurable options (apply to all instances)
         "sections": [
             {
                 "friendlyName": "SIP Settings",
@@ -342,21 +364,40 @@ class DeviceType:
         ]
     }
     
+    DeviceSpecificOptions = {         # Device-specific options (per-device overrides)
+        "sections": [...]
+    }
+    
     def render(self, device: Device) -> str:
-        """Generate configuration file content."""
-        config = ""
-        # Build device config using device properties
-        return config
+        """Generate configuration file content.
+        
+        Access site config, lines, and device options via device object.
+        Return deterministic output matching ContentType.
+        """
+        # Merge common_options with device_specific_configuration
+        config = device.get_decrypted_device_config()
+        
+        # Build device config using device.site, device.lines, config dict
+        output = ""
+        # ... rendering logic
+        return output
 ```
 
 ## Frontend Architecture
 
 ### Page Structure
-- **Pages**: Route components (Devices, Lines, Sites, Device Types, Users, Change Password, User Settings)
+- **Pages**: Route components (Devices, Lines, Sites, Dial Plans, Device Types, Users, Change Password, User Settings)
 - **Components**: Reusable UI elements (tables, dialogs, forms)
 - **Stores**: Pinia stores for auth state and session
 - **Services**: API client modules with Axios
 - **Default Landing Page**: Devices page after login
+
+### Dial Plans Page
+The Dial Plans page allows administrators to:
+- Create named dial plans with ordered transformation rules
+- Configure input/output regex pairs for phone number transformations
+- Apply dial plans to sites (used during device provisioning)
+- Renderers convert standard regex format to device-specific syntax (Polycom digitmap, Grandstream dialplan, Yealink <rule>)
 
 ### Table Features
 - **Pagination**: Default 20 items per page
@@ -414,9 +455,17 @@ class DeviceType:
 
 ## Security Considerations
 
+### Encryption
+- **Fernet Symmetric Encryption**: Uses AES 128 CBC with HMAC for reversible encryption
+- **Password Storage**: Line `registration_password` fields encrypted in database using `EncryptionManager`
+- **Decryption at Render**: Passwords decrypted only when generating device configurations via `get_decrypted_device_config()`
+- **Encryption Key**: Configured via `ENCRYPTION_KEY` environment variable or `config.yaml`; defaults to insecure key in development
+
 ### Provisioning Endpoint Security
 - **Intentionally unauthenticated**: Phones cannot handle OAuth
 - **MAC-based identification**: Device identified by MAC address
+- **User-Agent Validation**: Device types specify `UserAgentPatterns` regex to detect device models from provisioning requests
+- **Logging**: All provisioning requests logged to `ProvisioningLog` table
 - **Logging**: All provisioning requests logged to ProvisioningLog
 - **Rate limiting**: Recommended at load balancer level
 - **Error masking**: Generic 404/403 to prevent info leakage
@@ -445,19 +494,29 @@ class DeviceType:
 
 ## Extensibility
 
+### Supported Device Types
+- **Yealink SIP-T33G**: IP phone with 4 lines (see [docs/YEALINK_SIP_T33G_RENDERER.md](YEALINK_SIP_T33G_RENDERER.md))
+- **Yealink W70B DECT**: DECT base station with DECT handsets
+- **Polycom SoundPoint IP650**: IP phone with 6 lines (see [docs/POLYCOM_SOUNDPOINT_IP650_RENDERER.md](POLYCOM_SOUNDPOINT_IP650_RENDERER.md))
+- **Grandstream HT812**: ATA gateway with 2 FXS ports (see [docs/GRANDSTREAM_HT812_RENDERER.md](GRANDSTREAM_HT812_RENDERER.md))
+- **Example SIP Phone**: Reference implementation
+
 ### Adding Device Types
 1. Create renderer class in `backend/provisioning/device_types/`
-2. Define `CommonOptions` schema for configuration UI
-3. Implement `render()` method
-4. Register in `RendererFactory.RENDERERS` dict
-5. UI automatically generates configuration forms
+2. Define `TypeID`, `Manufacturer`, `Model`, `NumberOfLines`, `ContentType`
+3. Define `UserAgentPatterns` regex list for device detection
+4. Define `CommonOptions` and `DeviceSpecificOptions` schemas
+5. Implement `render()` method to generate device configuration
+6. Register in `backend/provisioning/registry.py` and `RendererFactory.RENDERERS`
+7. UI automatically discovers and displays device type
 
 ### Adding API Endpoints
 1. Create/update model in `backend/core/models.py`
 2. Create serializer in `backend/core/serializers.py`
 3. Create viewset in `backend/core/views.py`
 4. Register in router in `backend/phone_manager/urls.py`
-5. Frontend service calls and UI automatically work
+5. Create frontend service in `frontend/src/services/`
+6. Frontend UI automatically works with new endpoint
 
 ## Monitoring & Logging
 
