@@ -57,8 +57,8 @@ RING_TONES = [
 DATE_FORMAT_CHOICES = [
     ("1 Jan, Mon", "D,Md"),
     ("Jan 1, Mon", "Md,D"),
-    ("Mon, 1 Jan", "D,dm"),
-    ("Mon, Jan 1", "D,md"),
+    ("Mon, 1 Jan", "D,dM"),
+    ("Mon, Jan 1", "D,Md"),
     ("DD/MM/YY", "DD/MM/YY"),
     ("DD/MM/YYYY", "DD/MM/YYYY"),
     ("MM/DD/YY", "MM/DD/YY"),
@@ -90,6 +90,14 @@ COMMON_OPTIONS = {
                     "type": "select",
                     "uiOrder": 2,
                     "options": [label for label, _ in DATE_FORMAT_CHOICES],
+                },
+                {
+                    "optionId": "use_long_format",
+                    "friendlyName": "Use Long Format (January/Jan, Tuesday/Tue)",
+                    "default": True,
+                    "mandatory": False,
+                    "type": "checkbox",
+                    "uiOrder": 3,
                 },
             ],
         },
@@ -124,11 +132,20 @@ COMMON_OPTIONS = {
                 },
                 {
                     "optionId": "syslog_renderLevel",
-                    "friendlyName": "Syslog Render Level",
-                    "default": 2,
+                    "friendlyName": "Logging Level",
+                    "default": "Minor Error",
                     "mandatory": False,
-                    "type": "number",
+                    "type": "select",
                     "uiOrder": 4,
+                    "options": [
+                        "Debug",
+                        "Event 1",
+                        "Event 2",
+                        "Event 3",
+                        "Minor Error",
+                        "Major Error",
+                        "Fatal Error",
+                    ],
                 },
             ],
         },
@@ -151,6 +168,30 @@ COMMON_OPTIONS = {
                     "mandatory": False,
                     "type": "number",
                     "uiOrder": 2,
+                },
+                {
+                    "optionId": "sip_local_port",
+                    "friendlyName": "Local SIP Port",
+                    "default": 5060,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 5,
+                },
+                {
+                    "optionId": "sip_use_rfc2543_hold",
+                    "friendlyName": "Use RFC2543 Hold",
+                    "default": True,
+                    "mandatory": False,
+                    "type": "checkbox",
+                    "uiOrder": 4,
+                },
+                {
+                    "optionId": "sip_max_retries",
+                    "friendlyName": "Maximum number of retries",
+                    "default": 3,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 3,
                 },
             ],
         },
@@ -177,6 +218,20 @@ COMMON_OPTIONS = {
                     "optionId": "inter_digit_timeout",
                     "friendlyName": "Inter-Digit timeout",
                     "default": 3,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 1,
+                },
+            ],
+        },
+        {
+            "friendlyName": "Device Appearance",
+            "uiOrder": 6,
+            "options": [
+                {
+                    "optionId": "calls_per_line_key",
+                    "friendlyName": "# of Calls per Line",
+                    "default": 4,
                     "mandatory": False,
                     "type": "number",
                     "uiOrder": 1,
@@ -442,12 +497,12 @@ class PolycomSoundPointIP650(DeviceType):
                     "enable": "0",
                     "start_day_of_week": "1",
                     "start_month": "1",
-                    "start_time": "00:00",
+                    "start_time": "0",
                     "start_date": "1",
                     "start_last_in_month": "0",
                     "stop_day_of_week": "1",
                     "stop_month": "1",
-                    "stop_time": "00:00",
+                    "stop_time": "0",
                     "stop_date": "1",
                     "stop_last_in_month": "0",
                 }
@@ -462,7 +517,7 @@ class PolycomSoundPointIP650(DeviceType):
                 return {
                     "day_of_week": str(day_of_week),
                     "month": str(dt.month),
-                    "time": dt.strftime("%H:%M"),
+                    "time": str(dt.hour),
                     "date": str(week_value),
                     "last_in_month": last_in_month,
                 }
@@ -488,12 +543,12 @@ class PolycomSoundPointIP650(DeviceType):
                 "enable": "0",
                 "start_day_of_week": "1",
                 "start_month": "1",
-                "start_time": "00:00",
+                "start_time": "0",
                 "start_date": "1",
                 "start_last_in_month": "0",
                 "stop_day_of_week": "1",
                 "stop_month": "1",
-                "stop_time": "00:00",
+                "stop_time": "0",
                 "stop_date": "1",
                 "stop_last_in_month": "0",
             }
@@ -590,11 +645,29 @@ class PolycomSoundPointIP650(DeviceType):
         syslog_server = config.get("syslog_server", "").strip()
         syslog_transport = config.get("syslog_transport", "UDP")
         syslog_facility = config.get("syslog_facility", 16)
-        syslog_render_level = config.get("syslog_renderLevel", 2)
+        syslog_render_level_label = config.get("syslog_renderLevel", "Minor Error")
+        
+        # Map logging level friendly name to numeric value
+        syslog_level_map = {
+            "Debug": 0,
+            "Event 1": 1,
+            "Event 2": 2,
+            "Event 3": 3,
+            "Minor Error": 4,
+            "Major Error": 5,
+            "Fatal Error": 6,
+        }
+        syslog_render_level = syslog_level_map.get(syslog_render_level_label, 4)
+        
         codec_priority_order = config.get("codec_priority_order", [CODEC_G722, CODEC_G711A, CODEC_G711MU])
         sip_register_expires = config.get("sip_register_expires", 3600)
         sip_retry_timeout = config.get("sip_retry_timeout", 30)
+        sip_local_port = int(config.get("sip_local_port", 5060))
+        sip_use_rfc2543_hold = config.get("sip_use_rfc2543_hold", True)
+        sip_max_retries = int(config.get("sip_max_retries", 3))
         inter_digit_timeout = int(config.get("inter_digit_timeout", 3))
+        use_long_format = config.get("use_long_format", True)
+        calls_per_line_key = int(config.get("calls_per_line_key", 4))
         
         # Get device-specific options
         admin_password = config.get("admin_password", "")
@@ -646,11 +719,12 @@ class PolycomSoundPointIP650(DeviceType):
             "lcl.ml.lang": "en-gb",
             
             # Regional settings
-            "lcl.datetime.time.24HourClock": "24" if clock_24hour else "12",
+            "lcl.datetime.time.24HourClock": "1" if clock_24hour else "0",
             "lcl.datetime.date.format": escape(date_format),
+            "lcl.ml.lang.clock.5.longFormat": "1" if use_long_format else "0",
             
             # Timezone
-            "device.sntp.gmtOffset": gmt_offset,
+            "device.sntp.gmtOffset": str(int(gmt_offset) * 3600),  # device expects in seconds
             "tcpIpApp.sntp.resyncPeriod": "14400",
             "tcpIpApp.sntp.daylightSavings.enable": dst_rules["enable"],
             "tcpIpApp.sntp.daylightSavings.start.dayOfWeek": dst_rules["start_day_of_week"],
@@ -679,6 +753,15 @@ class PolycomSoundPointIP650(DeviceType):
             # Admin passwords
             "device.auth.localAdminPassword": escape(admin_password),
             "device.auth.localUserPassword": escape(user_password),
+            
+            # SIP parameters
+            "voIpProt.SIP.local.port": str(sip_local_port),
+            "voIpProt.SIP.useRFC2543hold": "1" if sip_use_rfc2543_hold else "0",
+            "voIpProt.server.1.retryMaxCount": str(sip_max_retries),
+            "voIpProt.server.2.retryMaxCount": str(sip_max_retries),
+            
+            # Device appearance
+            "call.callsPerLineKey": str(calls_per_line_key),
             
         }
         
@@ -746,7 +829,7 @@ class PolycomSoundPointIP650(DeviceType):
                     digitmaps.append(digitmap_entry)
 
             if digitmaps:
-                attrs["dialplan.digitmap"] = escape(f"({ '|'.join(digitmaps) })")
+                attrs["dialplan.digitmap"] = escape(f"{ '|'.join(digitmaps) }")
                 attrs["dialplan.digitmap.timeOut"] = "|".join(
                     str(inter_digit_timeout) for _ in digitmaps
                 )
