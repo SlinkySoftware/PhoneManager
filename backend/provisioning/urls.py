@@ -10,6 +10,7 @@ provision_view = ProvisioningViewSet.as_view({"get": "retrieve"})
 
 urlpatterns = [
     path("cfg<str:pk>.xml", provision_view, name="provision-device"),
+    path("<str:pk>-phone.cfg", provision_view, name="provision-device"),
     path("<str:pk>.cfg", provision_view, name="provision-device"),
     path("<str:pk>", provision_view, name="provision-device"),
    
