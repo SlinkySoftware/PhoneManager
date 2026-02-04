@@ -233,6 +233,12 @@ When user clicks "Common Options" on Grandstream device:
 4. Values saved to database
 5. Next provisioning request includes these values
 
+## Recent Updates
+
+- **2026-02-05**: Added renderer documentation for Polycom SoundPoint IP650 and Grandstream HT812. See the dedicated renderer documents for parameter mappings, P-codes, XML examples and dial-plan conversion notes.
+- **2026-02-04**: Dial plan transformation rules improved to support both Polycom digitmap and Grandstream dialplan syntax. Renderer implementations now handle conversion specifics; frontend schema rendering remains unchanged.
+
+
 ## Files Modified
 
 ### Frontend
