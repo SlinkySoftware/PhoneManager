@@ -98,7 +98,8 @@ CommonOptions {
           mandatory: boolean        // Required field
           type: string              // Input type
           uiOrder: number           // Sort order
-          options?: string[]        // For select type
+          options?: string[]        // For select/multi-select (also accepts choices)
+          choices?: string[]        // Alternate list name (supported by UI)
         }
       ]
     }
@@ -113,8 +114,10 @@ CommonOptions {
 | `text` | Text input | String values, default validators |
 | `number` | Number input | Numeric values only |
 | `textarea` | Multi-line text | For longer text content |
-| `checkbox` | Boolean toggle | True/false values |
-| `select` | Dropdown | Requires `options` array with choices |
+| `checkbox` / `boolean` | Boolean toggle | True/false values |
+| `select` | Dropdown | Requires `options` or `choices` array |
+| `multiselect` | Multi-select | Multiple selectable values |
+| `orderedmultiselect` | Ordered multi-select | Priority ordering with up/down controls |
 
 ### Accessing Saved Values in Renderer
 
@@ -243,3 +246,8 @@ Frontend renders: Optional checkbox with label "Enable DHCP"
 - [docs/DEVICE_TYPE_OPTIONS.md](DEVICE_TYPE_OPTIONS.md) - Full technical documentation
 - [.github/COPILOT_GUIDELINES.md](.github/COPILOT_GUIDELINES.md) - Backend/frontend standards
 - [docs/FRONTEND_GUIDELINES.md](FRONTEND_GUIDELINES.md) - UI component patterns
+
+## New Renderer Docs
+
+- [docs/POLYCOM_SOUNDPOINT_IP650_RENDERER.md](POLYCOM_SOUNDPOINT_IP650_RENDERER.md) - Polycom SoundPoint IP650 renderer
+- [docs/GRANDSTREAM_HT812_RENDERER.md](GRANDSTREAM_HT812_RENDERER.md) - Grandstream HT812 renderer

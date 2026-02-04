@@ -67,6 +67,30 @@ Comprehensive validation, error handling, and delete confirmation patterns have 
 - Specified HTTP 409 for constraint violations (not 500)
 - Emphasized user-friendly error messages with guidance
 
+## Recent Improvements (2026-02-04)
+
+### Dial Plans Validation
+**Problem:** Dial plan rules could be saved with malformed input/output patterns or unsupported capture groups.
+
+**Solution:** Added strict input/output validation in the Dial Plans UI to prevent invalid rules:
+
+- **Input validation**
+  - Requires non-empty pattern
+  - Enforces at most one capture group
+  - Validates standard syntax (X, *, [], (), ^, $)
+- **Output validation**
+  - Requires non-empty pattern
+  - Allows only `$1` replacements
+  - Ensures `$1` usage matches the input capture group
+
+### Dial Plans UI Enhancements
+- Rule ordering controls with up/down buttons
+- In-use indicator for sites that reference a dial plan
+- Read-only view for non-admin users
+
+### Updated Files
+- [frontend/src/pages/DialPlansPage.vue](frontend/src/pages/DialPlansPage.vue)
+
 ## Implementation Status
 
 ### ✅ SitesPage.vue

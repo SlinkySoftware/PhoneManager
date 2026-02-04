@@ -56,8 +56,10 @@ Available to renderer via device.device_specific_configuration
 - `text` - Single-line text input (q-input)
 - `number` - Numeric input with validation (q-input type="number")
 - `textarea` - Multi-line text (q-input type="textarea")
-- `checkbox` - Boolean toggle (q-checkbox)
-- `select` - Dropdown with options (q-select)
+- `checkbox` / `boolean` - Boolean toggle (q-checkbox)
+- `select` - Dropdown with `options` or `choices` (q-select)
+- `multiselect` - Multi-select list of options
+- `orderedmultiselect` - Ordered dual-list selection with priority controls
 
 **Key Features:**
 - Sections sorted by `uiOrder`
@@ -66,6 +68,8 @@ Available to renderer via device.device_specific_configuration
 - Default values loaded from schema or database
 - Error display banner with extractErrorMessage pattern
 - Loading state during save operation
+- Reset to defaults action (restores schema defaults)
+- Read-only view for non-admin users
 
 ### API Integration
 

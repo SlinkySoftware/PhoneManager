@@ -1,14 +1,14 @@
 # Device Type Options UI Updates
 
 ## Overview
-Updated the DeviceTypesPage dialog styling to match the application's green color scheme and added support for new input types including orderedmultiselect with reordering capabilities.
+Updated the DeviceTypesPage dialog styling to match the application's green color scheme and added support for new input types including multiselect and orderedmultiselect with reordering capabilities.
 
 ## Styling Changes
 
 ### Color Scheme
 - **Dialog Header**: Changed from blue (`bg-blue-9`) to green (`bg-green-9`)
 - **Dialog Background**: Set to `bg-grey-9` for slightly lighter appearance against page background
-- **Section Headers**: Changed from grey-7 (`bg-grey-7`) to green-8 (`bg-green-8`) with white text
+- **Section Headers**: Changed from grey-7 (`bg-grey-7`) to green-9 (`bg-green-9`) with white text
 - **Section Borders**: Added 2px solid light green borders (`#1db885`) to section cards
 - **Accent Color**: All buttons and interactive elements use `color="green"`
 
@@ -35,7 +35,7 @@ Renders as a checkbox input for true/false configuration values.
 
 **Rendering:**
 - Uses Quasar `q-checkbox` component
-- Color: `color="teal"` for consistent theming
+- Color: `color="green"` for consistent theming
 - Stores as boolean in optionValues
 
 ### 2. Select Type (Enhanced)
@@ -56,10 +56,29 @@ Dropdown select for predefined option lists.
 **Rendering:**
 - Uses Quasar `q-select` component
 - Dark theme enabled: `dark` prop
-- Teal accent color: `color="teal"`
+- Green accent color: `color="green"`
 - Validation support for mandatory fields
 
-### 3. Ordered Multi-Select Type (`type: 'orderedmultiselect'`)
+### 3. Multi-Select Type (`type: 'multiselect'`)
+Renders as a grid of checkboxes for selecting multiple values.
+
+**Example Schema:**
+```json
+{
+  "optionId": "allowed_codecs",
+  "friendlyName": "Allowed Codecs",
+  "type": "multiselect",
+  "choices": ["PCMU", "PCMA", "G722"],
+  "default": ["PCMU", "G722"]
+}
+```
+
+**Rendering:**
+- Uses multiple `q-checkbox` controls
+- Handles both `options` and `choices` lists
+- Stores as array in optionValues
+
+### 4. Ordered Multi-Select Type (`type: 'orderedmultiselect'`)
 Dual-list interface for selecting and ordering multiple options.
 
 **Example Schema:**
@@ -135,23 +154,28 @@ When option.type is evaluated, the following order is used:
 3. `select` → q-select dropdown
 4. `boolean` or `checkbox` → q-checkbox
 5. `textarea` → q-input with textarea
-6. `orderedmultiselect` → Dual-list with ordering
-7. Unsupported → Warning message
+6. `multiselect` → Checkbox grid
+7. `orderedmultiselect` → Dual-list with ordering
+8. Unsupported → Warning message
 
 ## Visual Theme Integration
 
 ### Color Palette
 - **Primary Dark**: `bg-grey-9` (main backgrounds)
 - **Secondary Dark**: `bg-grey-8` (section content areas)
-- **Accent**: `bg-teal-9` (headers), `bg-teal-8` (sub-headers)
+- **Accent**: `bg-green-9` (headers)
 - **Highlight**: `#1db885` (borders and dividers)
 - **Text**: White on dark backgrounds
 
 ### Component Styling
 - All inputs: `dark`, `dense`, `outlined`
 - Buttons: `flat`, `dense`, `round`, `size="sm"`
-- Lists: Bordered, separated items with teal borders
+- Lists: Bordered, separated items with green borders
 - Spacing: Consistent use of `q-gutter-md` and `q-gutter-xs`
+
+### Dialog Behaviors
+- **Reset to Defaults**: Confirmation dialog restores schema defaults
+- **Read-Only Mode**: Non-admin users can view options with inputs disabled
 
 ## Testing Checklist
 
@@ -189,6 +213,10 @@ To support new input types, update your CommonOptions schema:
 # New capability
 "type": "orderedmultiselect"
 "options": ["option1", "option2", ...]
+
+# Multi-select capability
+"type": "multiselect"
+"choices": ["option1", "option2", ...]
 ```
 
 ### Backend Changes

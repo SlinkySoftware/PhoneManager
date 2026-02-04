@@ -15,7 +15,8 @@ The application uses **Token-based Authentication** with the following component
 ### Backend
 - **Login Endpoint** (`/api/auth/login/`): POST endpoint accepting username/password
 - **Token Authentication**: Django REST Framework Token Auth for protected endpoints
-- **Permission Classes**: Custom `AdminOrReadOnly` permission requiring authentication
+- **Permission Classes**: `IsAdminOrReadOnly` (read for authenticated users, write for admins)
+- **SSO Endpoints**: `/api/auth/saml/*` with SAML login and ACS callback
 
 ## Setup Instructions
 
@@ -43,15 +44,15 @@ REST_FRAMEWORK = {
 }
 ```
 
-### 2. Create Superuser (Admin User)
+### 2. Create Admin User
 
 Create an admin account for testing:
 ```bash
 cd backend
-python manage.py createsuperuser
+python manage.py createadmin
 ```
 
-Follow the prompts to set username, email, and password.
+This command creates an admin user and profile (role=admin) in one step.
 
 ### 3. Frontend Configuration (Optional)
 
@@ -78,12 +79,15 @@ Default is `http://localhost:8000/api`.
        "username": "admin",
        "email": "admin@example.com",
        "is_staff": true,
+       "role": "admin",
+       "is_sso": false,
+       "force_password_reset": false,
        ...
      }
    }
    ```
 7. Auth store saves token and user to localStorage
-8. Router redirects to `/device-types`
+8. Router redirects to `/devices`
 9. All subsequent API requests include `Authorization: Token abc123xyz...` header
 
 ## API Requests
@@ -119,6 +123,18 @@ Users can logout by:
   - CSRF protection headers
 - Session tokens are tied to user accounts
 - Implement token expiration for better security
+
+## SSO Authentication
+
+The backend supports SAML 2.0 SSO when enabled via config.
+
+**Endpoints:**
+- `GET /api/auth/config/` - Returns `{ "sso_enabled": true|false }`
+- `GET /api/auth/saml/login/` - Initiate SSO flow
+- `POST /api/auth/saml/acs/` - Assertion consumer service callback
+- `GET /api/auth/saml/metadata/` - Service Provider metadata XML
+
+See [docs/SSO_SETUP.md](SSO_SETUP.md) for complete SSO configuration.
 
 ## Testing the Authentication
 
@@ -172,3 +188,7 @@ curl http://localhost:8000/api/device-types/ \
 - Ensure migrations ran: `python manage.py migrate`
 - Check Token table exists: `python manage.py shell` → `Token.objects.all()`
 - Regenerate token if needed: Delete token and login again
+
+### Forced password reset
+- If `force_password_reset` is true, user must change password via `POST /api/auth/change-password/`
+- SSO users cannot change passwords via this endpoint

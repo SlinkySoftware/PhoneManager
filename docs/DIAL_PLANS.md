@@ -20,6 +20,7 @@ The following device types currently support dial plan rendering:
 |------------|----------|--------|---------------|-----------|
 | **Yealink SIP-T33G** | `yealink_sip_t33g.py` | ✓ Implemented | `dialplan.replace.prefix.X`<br>`dialplan.replace.replace.X` | 100 |
 | **Yealink W70B DECT** | `yealink_w70b_dect.py` | ✓ Implemented | `dialplan.replace.prefix.X`<br>`dialplan.replace.replace.X` | 100 |
+| **Polycom SoundPoint IP650** | `polycom_soundpoint_ip650.py` | ✓ Implemented | XML digitmap entries (attributes on `<ALL>`) | ~20-30* |
 | **Grandstream HT812** | `grandstream_ht812.py` | ✓ Implemented | XML `<P2396>{ rules }</P2396>` | ~20-30* |
 
 *Limited by XML field size (~2048 chars)

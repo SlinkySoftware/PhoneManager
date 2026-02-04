@@ -9,14 +9,14 @@ The Phone Provisioning Manager is a high-availability system for managing and pr
 2. **Deterministic Rendering**: Same configuration produces same output every time
 3. **Horizontal Scaling**: Multiple backend instances work independently behind a load balancer
 4. **Single Source of Truth**: PostgreSQL/SQLite database holds all configuration
-5. **Security**: Provisioning endpoints are unauthenticated (phones use MAC addresses), admin endpoints require JWT tokens
+5. **Security**: Provisioning endpoints are unauthenticated (phones use MAC addresses), admin endpoints require DRF token authentication
 
 ## Technology Stack
 
 ### Backend
 - **Framework**: Django 6.0.1 + Django REST Framework 3.15+
 - **Database**: PostgreSQL 17 (production) / SQLite 3 (development)
-- **Authentication**: Token-based JWT
+- **Authentication**: Token-based authentication (DRF tokens)
 - **Python**: 3.10+
 - **Key Libraries**: pytz (timezone support), Pillow (image handling)
 
@@ -275,7 +275,10 @@ When a user authenticates via SAML:
 
 **Provisioning Endpoints:**
 - `/provision/<MAC>` is **intentionally unauthenticated** (phones use MAC address for identification)
-- All requests logged to ProvisioningLog table
+- Additional filename formats are accepted for vendor compatibility:
+    - `/provision/<MAC>.cfg`
+    - `/provision/<MAC>-phone.cfg`
+    - `/provision/cfg<MAC>.xml`
 
 **CORS Configuration:**
 - Whitelist frontend origin only
@@ -311,6 +314,9 @@ When a user authenticates via SAML:
 
 **Provisioning Endpoints** (Public, unauthenticated)
 - `GET /provision/<MAC>` - Returns device configuration file
+- `GET /provision/<MAC>.cfg` - Vendor compatibility format
+- `GET /provision/<MAC>-phone.cfg` - Polycom-style format
+- `GET /provision/cfg<MAC>.xml` - XML provisioning format
 - `GET /api/device-types/` - List available device types with options
 
 **Utility Endpoints** (Public)
@@ -428,7 +434,7 @@ The Dial Plans page allows administrators to:
 - **Role Indicators**: Badges show Administrator/Read Only and SSO/Local
 
 ### State Management
-- **Auth Store**: JWT token, user info, login/logout
+- **Auth Store**: Token, user info, login/logout
 - **Session**: localStorage persistence of token
 - **Data**: Fetch on-demand (no duplication in stores)
 
@@ -465,8 +471,7 @@ The Dial Plans page allows administrators to:
 - **Intentionally unauthenticated**: Phones cannot handle OAuth
 - **MAC-based identification**: Device identified by MAC address
 - **User-Agent Validation**: Device types specify `UserAgentPatterns` regex to detect device models from provisioning requests
-- **Logging**: All provisioning requests logged to `ProvisioningLog` table
-- **Logging**: All provisioning requests logged to ProvisioningLog
+- **Logging**: User-Agent mismatches and provisioning errors are logged in backend logs
 - **Rate limiting**: Recommended at load balancer level
 - **Error masking**: Generic 404/403 to prevent info leakage
 
@@ -522,7 +527,7 @@ The Dial Plans page allows administrators to:
 
 ### Backend Logging
 - All requests logged to var/logs/backend.log
-- Provisioning requests logged with MAC, IP, outcome
+- Provisioning errors and User-Agent mismatches logged with MAC and device type
 - Failed authentication/authorization logged
 - Database errors logged with context
 
@@ -534,7 +539,7 @@ The Dial Plans page allows administrators to:
 ## Documentation Structure
 
 - **ARCHITECTURE.md**: This file - system design and flow
-- **AUTHENTICATION.md**: Login flow and JWT token management
+- **AUTHENTICATION.md**: Login flow and token management
 - **DEPLOYMENT.md**: Production deployment checklist (includes SSO setup)
 - **SSO_SETUP.md**: Comprehensive SAML SSO configuration guide
 - **FRONTEND_GUIDELINES.md**: UI development patterns

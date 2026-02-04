@@ -426,6 +426,12 @@ const authStore = useAuthStore();
 - Minimum 8 characters for new passwords
 - Visual feedback for password changes
 
+### Dial Plan Rules (Regex Inputs)
+- Input pattern is required and must use standard syntax (X, *, [], (), ^, $)
+- Output pattern is required and may only use `$1` for capture group replacement
+- Only one capture group is allowed per rule
+- Output must be compatible with input capture group usage
+
 ---
 
 ## Table Configuration

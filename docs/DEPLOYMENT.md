@@ -92,6 +92,8 @@ DJANGO_DEBUG=false                    # Disable debug mode in production
 DJANGO_SECRET_KEY=<strong-random>     # Set to random value
 DATABASE_URL=postgresql://...         # Postgres connection string
 POSTGRES_PASSWORD=<strong-password>   # DB password
+PROVISIONING_BASE_URL=https://your.domain.com/provision  # Base URL used by renderers
+ENCRYPTION_KEY=<strong-random>         # Used for reversible encryption at rest
 VITE_API_BASE=http://localhost:8000   # Frontend API base URL
 ```
 
@@ -507,6 +509,8 @@ SSO button will disappear from login page, users can only login with local crede
 ## Security Checklist
 
 - [ ] Set strong `DJANGO_SECRET_KEY` in .env
+- [ ] Set strong `ENCRYPTION_KEY` in config.yaml or environment
+- [ ] Set `PROVISIONING_BASE_URL` for renderer-generated configs
 - [ ] Use PostgreSQL in production (not SQLite)
 - [ ] Create dedicated database user with minimal privileges
 - [ ] Enable SSL/TLS with valid certificate
