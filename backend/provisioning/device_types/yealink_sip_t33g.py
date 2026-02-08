@@ -250,7 +250,7 @@ COMMON_OPTIONS: Dict[str, Any] = {
                 {
                     "optionId": "network_port_http",
                     "friendlyName": "HTTP Server Port",
-                    "default": 10080,
+                    "default": 8080,
                     "mandatory": False,
                     "type": "number",
                     "uiOrder": 1,
@@ -258,7 +258,7 @@ COMMON_OPTIONS: Dict[str, Any] = {
                 {
                     "optionId": "network_port_https",
                     "friendlyName": "HTTPS Server Port",
-                    "default": 10443,
+                    "default": 8443,
                     "mandatory": False,
                     "type": "number",
                     "uiOrder": 2,
