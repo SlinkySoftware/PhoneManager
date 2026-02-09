@@ -26,6 +26,9 @@
           <q-btn v-if="isReadOnly" dense flat icon="visibility" color="info" @click="openEdit(props.row)">
             <q-tooltip>View</q-tooltip>
           </q-btn>
+          <q-btn v-if="!isReadOnly" dense flat icon="content_copy" color="orange" @click="openClone(props.row)">
+            <q-tooltip>Clone Device</q-tooltip>
+          </q-btn>
           <q-btn v-if="!isReadOnly" dense flat icon="delete" color="negative" @click="openDeleteConfirm(props.row)" />
         </q-td>
       </template>
@@ -855,6 +858,111 @@ const openEdit = async (row) => {
   originalForm.value = JSON.parse(JSON.stringify(form.value));
   originalLines.value = JSON.parse(JSON.stringify(formLines.value));
   originalConfig.value = JSON.parse(JSON.stringify(deviceConfigValues.value));
+  formHasChanges.value = false;
+  
+  dialog.value = true;
+};
+
+const openClone = async (row) => {
+  // Copy source device to form
+  form.value = { ...row };
+  
+  // Set cloned device name
+  form.value.name = "Copy Of " + row.name;
+  
+  // Clear fields that must be unique or empty for new device
+  form.value.mac_address = '';
+  form.value.id = undefined;
+  
+  // Preserve device type and site
+  // (already copied in { ...row })
+  
+  errorMessage.value = '';
+  lineDisassociationWarning.value = '';
+  passwordFieldsChanged.value = {};
+  
+  // Wait for selectedDeviceType to compute
+  await new Promise(resolve => setTimeout(resolve, 0));
+  
+  // Initialize line assignments with source device's lines
+  if (selectedDeviceType.value) {
+    formLines.value = Array(selectedDeviceType.value.numberOfLines).fill(null);
+    
+    // Copy line_1 if exists
+    if (row.line_1) {
+      formLines.value[0] = row.line_1;
+    }
+    
+    // Copy additional lines from lines array
+    if (row.lines && Array.isArray(row.lines)) {
+      row.lines.forEach((lineId, idx) => {
+        const formIdx = idx + 1; // lines array starts at slot 1 (slot 0 is line_1)
+        if (formIdx < formLines.value.length) {
+          formLines.value[formIdx] = lineId;
+        }
+      });
+    }
+    
+    // Filter out non-shared lines (keep only shared lines in their original slots)
+    formLines.value = formLines.value.map(lineId => {
+      if (lineId === null || lineId === undefined) return null;
+      const line = lines.value.find(l => l.id === lineId);
+      return (line && line.is_shared) ? lineId : null;
+    });
+  }
+  
+  // Copy device-specific configuration with doNotClone flag handling
+  deviceConfigValues.value = {};
+  
+  if (selectedDeviceType.value?.deviceSpecificOptions?.sections) {
+    selectedDeviceType.value.deviceSpecificOptions.sections.forEach(section => {
+      section.options?.forEach(option => {
+        let value;
+        
+        // Check doNotClone flag
+        if (option.doNotClone === true) {
+          // Use default value instead of copying from source
+          value = option.default;
+        } else {
+          // Copy value from source device configuration
+          value = row.device_specific_configuration?.[option.optionId];
+          
+          // If value is undefined, use default
+          if (value === undefined || value === null) {
+            value = option.default;
+          }
+        }
+        
+        // Handle password fields - always clear for security
+        if (option.type === 'password') {
+          deviceConfigValues.value[option.optionId] = '';
+        }
+        // Ensure multiselect/orderedmultiselect values are arrays
+        else if (option.type === 'multiselect' || option.type === 'orderedmultiselect') {
+          if (value === undefined || value === null) {
+            deviceConfigValues.value[option.optionId] = [];
+          } else if (!Array.isArray(value)) {
+            deviceConfigValues.value[option.optionId] = [value];
+          } else {
+            deviceConfigValues.value[option.optionId] = [...value];
+          }
+        }
+        // Handle other types
+        else {
+          if (value === undefined || value === null) {
+            deviceConfigValues.value[option.optionId] = option.default ?? '';
+          } else {
+            deviceConfigValues.value[option.optionId] = value;
+          }
+        }
+      });
+    });
+  }
+  
+  // Track as new device (no original state to compare against)
+  originalForm.value = null;
+  originalLines.value = null;
+  originalConfig.value = null;
   formHasChanges.value = false;
   
   dialog.value = true;

@@ -83,6 +83,7 @@ Backend API will be available at http://localhost:8000/api
 ## Key Features
 
 - **Device Management**: CRUD operations for SIP devices with flexible provisioning
+- **Clone Device**: Rapid device provisioning by cloning existing configurations with intelligent line handling
 - **Site & Line Management**: Organize devices into sites with multi-line support
 - **Authentication**: Token-based authentication with local users and SAML SSO support
 - **Role-Based Access Control**: Admin and Read-Only user roles with UI enforcement

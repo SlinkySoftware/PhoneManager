@@ -100,6 +100,7 @@ CommonOptions {
           uiOrder: number           // Sort order
           options?: string[]        // For select/multi-select (also accepts choices)
           choices?: string[]        // Alternate list name (supported by UI)
+          doNotClone?: boolean      // Optional: If true, uses default instead of copying when device is cloned
         }
       ]
     }
@@ -118,6 +119,7 @@ CommonOptions {
 | `select` | Dropdown | Requires `options` or `choices` array |
 | `multiselect` | Multi-select | Multiple selectable values |
 | `orderedmultiselect` | Ordered multi-select | Priority ordering with up/down controls |
+| `password` | Password input | Always cleared when device is cloned |
 
 ### Accessing Saved Values in Renderer
 

@@ -44,7 +44,8 @@ Available to renderer via device.device_specific_configuration
           "default": "",                       // Default value
           "mandatory": false,                  // Validation requirement
           "type": "text",                      // Input type
-          "uiOrder": 1                        // Sort order
+          "uiOrder": 1,                        // Sort order
+          "doNotClone": false                  // Optional: If true, uses default instead of copying when device is cloned
         }
       ]
     }
@@ -60,6 +61,10 @@ Available to renderer via device.device_specific_configuration
 - `select` - Dropdown with `options` or `choices` (q-select)
 - `multiselect` - Multi-select list of options
 - `orderedmultiselect` - Ordered dual-list selection with priority controls
+- `password` - Password input with security features (always cleared on clone)
+
+**Optional Schema Flags:**
+- `doNotClone` - When `true`, this option will use its `default` value instead of copying from source device during Clone operation. Useful for device-specific settings like hostname, serial number, or MAC-dependent configurations that should not be duplicated.
 
 **Key Features:**
 - Sections sorted by `uiOrder`

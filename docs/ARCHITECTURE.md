@@ -410,8 +410,9 @@ The Dial Plans page allows administrators to:
 - **Per-Page Options**: 20, 50, 100, All
 - **Sortable Columns**: Click headers to sort
 - **Loading States**: Progress indicators during data fetch
-- **Action Buttons**: Context-aware based on user role (Edit/View/Delete)
+- **Action Buttons**: Context-aware based on user role (Edit/View/Clone/Delete)
 - **Row Selection**: Unique ID-based selection
+- **Clone Operation**: Duplicate device configurations with shared line preservation and doNotClone flag support
 
 ### Form Patterns
 - Real-time validation with error messages

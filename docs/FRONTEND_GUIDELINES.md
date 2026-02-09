@@ -392,6 +392,99 @@ const authStore = useAuthStore();
 - **Clear Identification**: "You" chip makes it obvious which user account is yours
 - **Applies To**: Users page only (other pages don't have user-specific restrictions)
 
+### 9. Clone Device Operation
+
+Admin users can clone existing device configurations to speed up provisioning:
+- **Clone Button**: Shows between Edit and Delete buttons in device table actions
+- **Icon**: `content_copy` with tooltip "Clone Device"
+- **Behavior**: Opens New Device dialog prefilled with source device data
+- **Name Handling**: Automatically prepends "Copy Of " to source device name
+- **MAC Address**: Cleared (must be entered before save)
+- **Lines**: Shared lines preserved in original slot positions; non-shared slots cleared
+- **Device-Specific Options**: Copied unless option has `doNotClone: true` in schema
+- **Password Fields**: Always cleared for security (blank placeholder)
+- **Read-Only Users**: Clone button hidden (same gating as Edit/Delete)
+
+#### Implementation Pattern
+
+```vue
+<script setup>
+const openClone = async (row) => {
+  // Copy device properties
+  form.value = { ...row };
+  form.value.name = "Copy Of " + row.name;
+  form.value.mac_address = '';
+  form.value.id = undefined;
+  
+  // Wait for device type to compute
+  await new Promise(resolve => setTimeout(resolve, 0));
+  
+  // Copy line assignments, filtering out non-shared lines
+  if (selectedDeviceType.value) {
+    formLines.value = Array(selectedDeviceType.value.numberOfLines).fill(null);
+    if (row.line_1) formLines.value[0] = row.line_1;
+    if (row.lines) {
+      row.lines.forEach((lineId, idx) => {
+        if (idx + 1 < formLines.value.length) {
+          formLines.value[idx + 1] = lineId;
+        }
+      });
+    }
+    // Filter: keep only shared lines
+    formLines.value = formLines.value.map(lineId => {
+      if (!lineId) return null;
+      const line = lines.value.find(l => l.id === lineId);
+      return (line?.is_shared) ? lineId : null;
+    });
+  }
+  
+  // Copy device-specific options (honor doNotClone flag)
+  deviceConfigValues.value = {};
+  selectedDeviceType.value.deviceSpecificOptions?.sections?.forEach(section => {
+    section.options?.forEach(option => {
+      let value = option.doNotClone 
+        ? option.default 
+        : row.device_specific_configuration?.[option.optionId] ?? option.default;
+      
+      // Always clear password fields
+      if (option.type === 'password') value = '';
+      
+      // Ensure arrays for multiselect types
+      if ((option.type === 'multiselect' || option.type === 'orderedmultiselect') && !Array.isArray(value)) {
+        value = value ? [value] : [];
+      }
+      
+      deviceConfigValues.value[option.optionId] = value ?? '';
+    });
+  });
+  
+  dialog.value = true;
+};
+</script>
+
+<template>
+  <!-- Clone button in table actions -->
+  <q-btn 
+    v-if="!isReadOnly" 
+    dense 
+    flat 
+    icon="content_copy" 
+    color="accent" 
+    @click="openClone(props.row)"
+  >
+    <q-tooltip>Clone Device</q-tooltip>
+  </q-btn>
+</template>
+```
+
+**Key Points:**
+- **Prefill Strategy**: Clone copies most settings to reduce repetitive data entry
+- **Security**: MAC and passwords always cleared (prevent accidental duplication)
+- **Line Handling**: Only shared lines copied to prevent assignment conflicts
+- **Schema Flag**: `doNotClone: true` in option schema uses default instead of copying
+- **Validation**: Standard validation applies (MAC required, unique, Line 1 required)
+- **User Experience**: "Copy Of " prefix makes cloned devices easily identifiable
+
 ---
 
 ## Required Validations by Data Type
