@@ -3,6 +3,8 @@
 ## Overview
 Implemented dynamic, schema-driven rendering of device type configuration options on the Device Types page. The frontend now interprets the `CommonOptions` JSON schema from device type plugins and renders appropriate UI controls.
 
+Device-specific defaults are also configurable per device type. Administrators can set default values for `DeviceSpecificOptions` through an "Edit Device Defaults" dialog, which the Devices page uses when creating devices, changing device types, or resetting defaults.
+
 ## Architecture
 
 ### Data Flow
@@ -18,6 +20,19 @@ User enters values
 Saved to DeviceTypeConfig.saved_values
     ↓
 Available to renderer via device.device_specific_configuration
+```
+
+### Device Defaults Flow
+```
+DeviceTypePlugin.DeviceSpecificOptions (JSON schema)
+  ↓
+Frontend renders "Edit Device Defaults" dialog
+  ↓
+Administrator saves defaults
+  ↓
+Saved to DeviceTypeConfig.device_defaults
+  ↓
+Devices page applies defaults on create / type change / reset defaults
 ```
 
 ## Frontend Implementation
@@ -91,6 +106,11 @@ POST /device-type-config/ExampleSIPPhone/
     "outbound_proxy": "proxy.example.com",
     "sip_profile_1_server": "sip.example.com",
     /* ... all configured values */
+  },
+  "device_defaults": {
+    "sip_server": "sip.example.com",
+    "codec_priority": ["g722", "g711u"],
+    /* ... device-specific default values */
   }
 }
 ```
@@ -101,6 +121,7 @@ POST /device-type-config/ExampleSIPPhone/
 
 **New Fields:**
 - `saved_values` - JSON field storing user-entered configuration values
+- `device_defaults` - JSON field storing per-device-type defaults for DeviceSpecificOptions
 - Internal storage: values saved within `common_options['_saved_values']`
 
 **Create/Update Behavior:**

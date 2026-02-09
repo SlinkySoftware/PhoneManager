@@ -466,6 +466,7 @@ const form = ref(emptyForm());
 const formLines = ref([]);
 const deviceConfigValues = ref({});
 const passwordFieldsChanged = ref({});
+const deviceTypeDefaults = ref({});
 const isValidMac = (val) => {
   if (!val) return false;
   const patterns = [
@@ -481,6 +482,32 @@ const normalizeMac = (val) => {
   const cleaned = val.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
   if (cleaned.length !== 12) return val;
   return cleaned.match(/.{1,2}/g).join(':');
+};
+
+const normalizeDefaultValue = (option, value) => {
+  if (option.type === 'orderedmultiselect' || option.type === 'multiselect') {
+    if (value === undefined || value === null) return [];
+    if (!Array.isArray(value)) return [value];
+    return [...value];
+  }
+  if (value === undefined || value === null) return '';
+  return value;
+};
+
+const fetchDeviceDefaultsForType = async (typeId) => {
+  if (!typeId) return {};
+  if (Object.prototype.hasOwnProperty.call(deviceTypeDefaults.value, typeId)) {
+    return deviceTypeDefaults.value[typeId];
+  }
+  try {
+    const { data } = await api.get(`/device-type-config/${typeId}/`);
+    const defaults = data.device_defaults || {};
+    deviceTypeDefaults.value[typeId] = defaults;
+    return defaults;
+  } catch (error) {
+    deviceTypeDefaults.value[typeId] = {};
+    return {};
+  }
 };
 
 
@@ -719,7 +746,7 @@ const preserveConfigForType = (newType) => {
 
 watch(
   () => form.value.device_type_id,
-  (newTypeId) => {
+  async (newTypeId) => {
     if (!newTypeId) {
       formLines.value = [];
       deviceConfigValues.value = {};
@@ -733,39 +760,19 @@ watch(
     const kept = prevLines.slice(0, maxKeep);
     const removed = prevLines.slice(newCount).filter(val => val !== null && val !== undefined);
 
-    // Initialize all options with defaults, then preserve existing values
-    const oldConfig = { ...deviceConfigValues.value };
-    
-    // First: Initialize all new device type options with their defaults
+    // Initialize device-specific options using user-overridden defaults
+    deviceConfigValues.value = {};
+    const typeDefaults = await fetchDeviceDefaultsForType(newTypeId);
     if (newType?.deviceSpecificOptions?.sections) {
       newType.deviceSpecificOptions.sections.forEach(section => {
         section.options?.forEach(option => {
-          // Set default based on option type
-          let defaultValue = option.default;
-          if (option.type === 'orderedmultiselect' || option.type === 'multiselect') {
-            // For multiselect types, default should be an array
-            if (defaultValue === undefined || defaultValue === null) {
-              defaultValue = [];
-            } else if (!Array.isArray(defaultValue)) {
-              defaultValue = [defaultValue];
-            }
-          } else if (defaultValue === undefined || defaultValue === null) {
-            defaultValue = '';
-          }
-          deviceConfigValues.value[option.optionId] = defaultValue;
+          const overrideValue = typeDefaults?.[option.optionId];
+          const baseValue = overrideValue !== undefined ? overrideValue : option.default;
+          deviceConfigValues.value[option.optionId] = normalizeDefaultValue(option, baseValue);
         });
       });
     }
-    
-    // Second: Preserve existing values that are still valid in the new device type
-    // (only those options that exist in both old and new type)
-    const newOptionIds = optionIdsForType(newType);
-    Object.keys(oldConfig).forEach(key => {
-      if (newOptionIds.has(key)) {
-        // This option exists in the new device type, preserve its value
-        deviceConfigValues.value[key] = oldConfig[key];
-      }
-    });
+    passwordFieldsChanged.value = {};
 
     // Pad or trim line assignments based on new device type
     const updatedLines = [...kept];
@@ -787,11 +794,13 @@ const openCreate = () => {
   deviceConfigValues.value = {};
   const deviceType = deviceTypes.value.find(dt => dt.typeId === form.value.device_type_id);
   if (deviceType?.deviceSpecificOptions?.sections) {
-    deviceType.deviceSpecificOptions.sections.forEach(section => {
-      section.options?.forEach(option => {
-        // Set default based on option type
-        const defaultValue = option.default ?? (option.type === 'orderedmultiselect' || option.type === 'multiselect' ? [] : '');
-        deviceConfigValues.value[option.optionId] = defaultValue;
+    fetchDeviceDefaultsForType(deviceType.typeId).then(typeDefaults => {
+      deviceType.deviceSpecificOptions.sections.forEach(section => {
+        section.options?.forEach(option => {
+          const overrideValue = typeDefaults?.[option.optionId];
+          const baseValue = overrideValue !== undefined ? overrideValue : option.default;
+          deviceConfigValues.value[option.optionId] = normalizeDefaultValue(option, baseValue);
+        });
       });
     });
   }
@@ -1087,24 +1096,15 @@ const confirmResetDeviceOptions = () => {
  * Reset device-specific configuration options to defaults.
  * Does not affect static settings (Name, MAC, Site, Lines).
  */
-const performResetDeviceOptions = () => {
+const performResetDeviceOptions = async () => {
   resetConfirmDialog.value = false;
   if (selectedDeviceType.value?.deviceSpecificOptions?.sections) {
+    const typeDefaults = await fetchDeviceDefaultsForType(selectedDeviceType.value.typeId);
     selectedDeviceType.value.deviceSpecificOptions.sections.forEach(section => {
       section.options?.forEach(option => {
-        // Set default based on option type
-        let defaultValue = option.default;
-        if (option.type === 'orderedmultiselect' || option.type === 'multiselect') {
-          // For multiselect types, default should be an array
-          if (defaultValue === undefined || defaultValue === null) {
-            defaultValue = [];
-          } else if (!Array.isArray(defaultValue)) {
-            defaultValue = [defaultValue];
-          }
-        } else if (defaultValue === undefined || defaultValue === null) {
-          defaultValue = '';
-        }
-        deviceConfigValues.value[option.optionId] = defaultValue;
+        const overrideValue = typeDefaults?.[option.optionId];
+        const baseValue = overrideValue !== undefined ? overrideValue : option.default;
+        deviceConfigValues.value[option.optionId] = normalizeDefaultValue(option, baseValue);
       });
     });
   }

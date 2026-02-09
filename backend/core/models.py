@@ -172,6 +172,7 @@ class DeviceTypeConfig(models.Model):
 
     type_id = models.CharField(max_length=128, unique=True)
     common_options = models.JSONField(default=dict, blank=True)
+    device_defaults = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["type_id"]
@@ -245,6 +246,69 @@ class DeviceTypeConfig(models.Model):
                 self.common_options['_saved_values'][key] = encrypt_password(value)
             else:
                 self.common_options['_saved_values'][key] = value
+
+    def get_decrypted_device_defaults(self):
+        """Get device default values with passwords decrypted.
+
+        Returns dict with password fields decrypted for use in device default settings.
+        """
+        if not self.device_defaults:
+            return {}
+
+        # Import here to avoid circular dependency
+        from provisioning.registry import get_device_type
+
+        device_type_cls = get_device_type(self.type_id)
+        if not device_type_cls:
+            return self.device_defaults
+
+        # Identify password fields from DeviceSpecificOptions schema
+        password_fields = set()
+        for section in device_type_cls.DeviceSpecificOptions.get('sections', []):
+            for option in section.get('options', []):
+                if option.get('type') == 'password':
+                    password_fields.add(option['optionId'])
+
+        # Decrypt password fields
+        decrypted = {}
+        for key, value in self.device_defaults.items():
+            if key in password_fields and value:
+                decrypted[key] = decrypt_password(value)
+            else:
+                decrypted[key] = value
+
+        return decrypted
+
+    def set_encrypted_device_defaults(self, values: dict):
+        """Set device default values with passwords encrypted.
+
+        Args:
+            values: Dict of plaintext values from API/frontend
+        """
+        # Import here to avoid circular dependency
+        from provisioning.registry import get_device_type
+
+        device_type_cls = get_device_type(self.type_id)
+        if not device_type_cls:
+            self.device_defaults = values
+            return
+
+        # Identify password fields from DeviceSpecificOptions schema
+        password_fields = set()
+        for section in device_type_cls.DeviceSpecificOptions.get('sections', []):
+            for option in section.get('options', []):
+                if option.get('type') == 'password':
+                    password_fields.add(option['optionId'])
+
+        # Encrypt password fields
+        encrypted_defaults = {}
+        for key, value in values.items():
+            if key in password_fields and value:
+                encrypted_defaults[key] = encrypt_password(value)
+            else:
+                encrypted_defaults[key] = value
+
+        self.device_defaults = encrypted_defaults
 
 
 class Device(models.Model):

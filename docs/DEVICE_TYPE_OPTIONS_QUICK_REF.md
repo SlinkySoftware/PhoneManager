@@ -108,6 +108,10 @@ CommonOptions {
 }
 ```
 
+### Device Defaults
+
+Administrators can set per-device-type defaults for `DeviceSpecificOptions` via the "Edit Device Defaults" dialog. These values are stored in `device_defaults` on `DeviceTypeConfig` and applied when creating devices, changing device types, or resetting defaults in the Devices page.
+
 ### Input Types
 
 | Type | Input Widget | Notes |

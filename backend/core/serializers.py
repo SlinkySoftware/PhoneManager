@@ -369,26 +369,34 @@ class DeviceTypeConfigSerializer(serializers.ModelSerializer):
     Passwords are automatically encrypted/decrypted.
     """
     saved_values = serializers.JSONField(required=False, allow_null=True)
+    device_defaults = serializers.JSONField(required=False, allow_null=True)
 
     class Meta:
         model = DeviceTypeConfig
-        fields = ["type_id", "common_options", "saved_values"]
+        fields = ["type_id", "common_options", "saved_values", "device_defaults"]
 
     def to_representation(self, instance):
         """Include decrypted saved_values in the response."""
         data = super().to_representation(instance)
         # Return decrypted saved values
         data['saved_values'] = instance.get_decrypted_saved_values()
+        data['device_defaults'] = instance.get_decrypted_device_defaults()
         return data
 
     def create(self, validated_data):
         """Create or update device type configuration."""
         saved_values = validated_data.pop('saved_values', {})
+        device_defaults = validated_data.pop('device_defaults', {})
         instance = super().create(validated_data)
         
         # Encrypt and store saved values
         if saved_values:
             instance.set_encrypted_saved_values(saved_values)
+            instance.save()
+
+        # Encrypt and store device defaults
+        if device_defaults:
+            instance.set_encrypted_device_defaults(device_defaults)
             instance.save()
         
         return instance
@@ -396,18 +404,25 @@ class DeviceTypeConfigSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         """Update device type configuration and save encrypted user values."""
         saved_values = validated_data.pop('saved_values', {})
+        device_defaults = validated_data.pop('device_defaults', None)
         
         # Get existing decrypted values
         existing_decrypted = instance.get_decrypted_saved_values()
+        existing_defaults = instance.get_decrypted_device_defaults()
         
         # Merge with incoming values (preserve passwords not provided)
         merged_values = {**existing_decrypted, **saved_values}
+        merged_defaults = {**existing_defaults, **(device_defaults or {})}
         
         instance = super().update(instance, validated_data)
         
         # Encrypt and store saved values
         if merged_values:
             instance.set_encrypted_saved_values(merged_values)
+            instance.save()
+
+        if device_defaults is not None:
+            instance.set_encrypted_device_defaults(merged_defaults)
             instance.save()
         
         return instance

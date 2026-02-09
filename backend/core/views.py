@@ -471,38 +471,11 @@ class DeviceTypeConfigViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        try:
-            instance = DeviceTypeConfig.objects.get(type_id=type_id)
-            saved_values = request.data.get('saved_values', {})
-            
-            # Update common_options with new schema if provided
-            if 'common_options' in request.data:
-                instance.common_options = request.data.get('common_options', {})
-            
-            # Store saved values
-            if saved_values:
-                instance.common_options['_saved_values'] = saved_values
-            
-            instance.save()
-            serializer = self.get_serializer(instance)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except DeviceTypeConfig.DoesNotExist:
-            # Create new record
-            common_options = request.data.get('common_options', {})
-            saved_values = request.data.get('saved_values', {})
-            
-            instance = DeviceTypeConfig.objects.create(
-                type_id=type_id,
-                common_options=common_options
-            )
-            
-            # Store saved values
-            if saved_values:
-                instance.common_options['_saved_values'] = saved_values
-                instance.save()
-            
-            serializer = self.get_serializer(instance)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        instance, created = DeviceTypeConfig.objects.get_or_create(type_id=type_id)
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(type_id=type_id)
+        return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
     def create(self, request, *args, **kwargs):
         """Handle POST requests to create new configuration."""
