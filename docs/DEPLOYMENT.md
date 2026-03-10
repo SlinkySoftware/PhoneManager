@@ -123,10 +123,10 @@ After first run, edit `/etc/phonemanager/backend.env` with production DB credent
 
 ### Prerequisites
 
-- Ubuntu 20.04 LTS or similar
-- Python 3.10+
+- Debian 13, RHEL 9+ (or compatible enterprise Linux distribution)
+- Python 3.12+
 - Node.js 18+
-- PostgreSQL 13+
+- PostgreSQL 14+
 - systemd for process management
 
 ### Backend Setup
