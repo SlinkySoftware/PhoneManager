@@ -99,6 +99,28 @@ VITE_API_BASE=http://localhost:8000   # Frontend API base URL
 
 ## Production Deployment (Bare Metal)
 
+### Automated RHEL Install (Recommended)
+
+For RHEL-based production hosts, use the installation script:
+
+```bash
+cd /opt/phonemanager
+sudo ./scripts/install-rhel-baremetal.sh
+```
+
+What it configures:
+
+- Installs RHEL dependencies (Python 3.12+, compiler/libs, Node.js/npm, nginx)
+- Creates backend virtual environment and installs Python modules
+- Installs frontend Node modules and builds Quasar (`frontend/dist/spa`)
+- Writes externalized backend env file at `/etc/phonemanager/backend.env`
+- Creates/starts `phonemanager-gunicorn` systemd service
+- Configures nginx to:
+    - proxy Django WSGI endpoints (`/api/`, `/admin/`, `/provision/`) to Gunicorn
+    - serve frontend SPA from `frontend/dist/spa`
+
+After first run, edit `/etc/phonemanager/backend.env` with production DB credentials and restart the backend service.
+
 ### Prerequisites
 
 - Ubuntu 20.04 LTS or similar
