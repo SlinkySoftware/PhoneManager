@@ -28,6 +28,12 @@ require_root() {
 }
 
 validate_paths() {
+  if [[ ! -d "$APP_DIR/.git" ]]; then
+    echo "Git repository not found at $APP_DIR"
+    echo "Set APP_DIR to the project checkout path."
+    exit 1
+  fi
+
   if [[ ! -d "$BACKEND_DIR" || ! -f "$BACKEND_DIR/manage.py" ]]; then
     echo "Backend directory not found: $BACKEND_DIR"
     echo "Set APP_DIR if your checkout is in a non-default location."
@@ -50,6 +56,19 @@ validate_paths() {
     echo "Set ENV_FILE or run scripts/install-rhel-baremetal.sh first."
     exit 1
   fi
+}
+
+ensure_ownership() {
+  log "Ensuring file ownership for application directory"
+  chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
+}
+
+update_source_code() {
+  log "Fetching latest source code"
+  run_as_app_user "git fetch --all --prune"
+
+  log "Pulling latest changes"
+  run_as_app_user "git pull --ff-only"
 }
 
 upgrade_backend_dependencies() {
@@ -100,8 +119,10 @@ restart_gunicorn() {
 main() {
   require_root
   validate_paths
+  ensure_ownership
 
   log "Starting application upgrade"
+  update_source_code
   upgrade_backend_dependencies
   upgrade_frontend_dependencies
   run_migrations
@@ -113,11 +134,13 @@ main() {
 Upgrade completed successfully.
 
 Executed steps:
-1. Updated Python packages from backend/requirements.txt
-2. Updated Node.js packages from frontend/package-lock.json/package.json
-3. Ran Django migrations
-4. Rebuilt Quasar frontend
-5. Restarted $GUNICORN_SERVICE
+1. Ensured file ownership under APP_DIR
+2. Pulled latest source code from git remote
+3. Updated Python packages from backend/requirements.txt
+4. Updated Node.js packages from frontend/package-lock.json/package.json
+5. Ran Django migrations
+6. Rebuilt Quasar frontend
+7. Restarted $GUNICORN_SERVICE
 
 EOF
 }
