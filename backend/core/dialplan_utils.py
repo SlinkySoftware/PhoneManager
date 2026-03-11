@@ -6,11 +6,14 @@ import re
 from typing import Tuple, Optional
 
 
+DIGIT_WILDCARD_REGEX = "[0-9]"
+
+
 class StandardRegexConverter:
     """Converts user-friendly dial plan syntax to Python regex format.
     
     Supported syntax:
-    - X = any single digit [0-9]
+    - X/x = any single digit [0-9]
     - * = any number of digits (must be at end) → .+
     - [0-9] = digit range (passed through as-is)
     - [^0] = negation (passed through as-is)
@@ -30,8 +33,8 @@ class StandardRegexConverter:
             - If invalid: (None, error_message)
         """
         try:
-            # Replace X with [0-9]
-            converted = pattern.replace("X", "[0-9]")
+            # Replace X/x with [0-9]
+            converted = pattern.replace("X", DIGIT_WILDCARD_REGEX).replace("x", DIGIT_WILDCARD_REGEX)
             
             # Replace * with .+ (any number of digits)
             # * can be at end of pattern or inside capture groups: (XXXX*) → ([0-9]{4}.+)
@@ -65,8 +68,8 @@ class StandardRegexConverter:
             Tuple of (converted_pattern, error_message)
         """
         try:
-            # Replace X with [0-9] if used in output
-            converted = pattern.replace("X", "[0-9]")
+            # Replace X/x with [0-9] if used in output
+            converted = pattern.replace("X", DIGIT_WILDCARD_REGEX).replace("x", DIGIT_WILDCARD_REGEX)
             
             # Check for invalid double dollar sign
             if "$$" in converted:
@@ -98,7 +101,7 @@ def validate_dial_plan_rule(input_pattern: str, output_pattern: str) -> Tuple[bo
         return False, f"Input pattern error: {input_error}"
     
     # Validate output pattern
-    converted_output, output_error = StandardRegexConverter.convert_output_pattern(output_pattern)
+    _, output_error = StandardRegexConverter.convert_output_pattern(output_pattern)
     if output_error:
         return False, f"Output pattern error: {output_error}"
     
@@ -106,7 +109,7 @@ def validate_dial_plan_rule(input_pattern: str, output_pattern: str) -> Tuple[bo
     try:
         # Try a simple substitution to ensure patterns are compatible
         test_string = "1234567890"
-        match = re.match(converted_input, test_string)
+        re.match(converted_input, test_string)
         # We don't need a match, just verify the regex compiles
     except Exception as e:
         return False, f"Pattern compatibility error: {str(e)}"

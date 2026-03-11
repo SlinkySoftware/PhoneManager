@@ -84,7 +84,7 @@
           <div class="text-subtitle1 q-mt-md q-mb-sm">Transformation Rules</div>
           <div class="text-caption text-grey-7 q-mb-md">
             Rules are applied in sequence order. First match wins.<br>
-            Syntax: X=[0-9], *=.+, []=literal, ()=capture group, $1/$2=replacement
+            Syntax: X/x=[0-9], *=.+, []=literal, ()=capture group, $1=replacement
           </div>
 
           <q-table
@@ -392,14 +392,14 @@ const validateInputPattern = (pattern) => {
     }
   }
 
-  const allowedChars = /^[0-9+\[\]^\-\$()*]+$/;
+  const allowedChars = /^[0-9Xx+\[\]^\-$()*]+$/;
   if (!allowedChars.test(pattern)) {
-    return 'Only digits, +, [], ^, $, *, and () are allowed';
+    return 'Only digits, X/x, +, [], ^, $, *, and () are allowed';
   }
 
-  const hasLettersOrSymbols = /[A-Za-z]|[#%{};:'"?\\/|,\.<>]/.test(pattern);
+  const hasLettersOrSymbols = /[A-WYZa-wyz]|[#%{};:'"?\\/|,\.<>]/.test(pattern);
   if (hasLettersOrSymbols) {
-    return 'Letters and special symbols are not allowed';
+    return 'Only X/x is allowed as a letter placeholder';
   }
 
   const bracketContent = pattern.match(/\[[^\]]*\]/g) || [];
