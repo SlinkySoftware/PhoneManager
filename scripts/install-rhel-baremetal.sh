@@ -56,12 +56,15 @@ ensure_python_312() {
     libxslt-devel \
     xmlsec1 \
     xmlsec1-openssl \
-    xmlsec1-devel \
     git \
     curl \
-    nginx \
-    nodejs \
-    npm
+    nginx 
+# Removed these as they are not in default RHEL 9 repos and would require EPEL or other third-party repos, which complicates the installation process. The Python 3.12 packages should be sufficient for building any required Python dependencies.
+#    xmlsec1-devel \
+#    nodejs \
+#    npm
+
+# Need to add in a step to install Node.js and npm from Nodesource or similar, as RHEL 9 repos do not have a recent enough version for Quasar. For now, we will assume the user has Node.js 16+ installed manually if they want to build the frontend.
 
   if command -v python3.12 >/dev/null 2>&1; then
     PYTHON_BIN="python3.12"
@@ -130,7 +133,9 @@ EOF
 write_backend_env() {
   log "Writing externalized backend environment file: $ENV_FILE"
   mkdir -p "$ENV_DIR"
-
+  chmod 750 "$ENV_DIR"
+  chown root:"$APP_GROUP" "$ENV_DIR"  
+  
   if [[ ! -f "$ENV_FILE" ]]; then
     cat > "$ENV_FILE" <<'EOF'
 DJANGO_SECRET_KEY=change-this-to-a-strong-random-secret
@@ -211,7 +216,7 @@ server {
     # Django API endpoints
     location /api/ {
         proxy_pass http://phonemanager_backend;
-        proxy_set_header Host \$host;
+        proxy_set_header Host localhost;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
@@ -220,7 +225,7 @@ server {
     # Provisioning endpoints for phones
     location /provision/ {
         proxy_pass http://phonemanager_backend;
-        proxy_set_header Host \$host;
+        proxy_set_header Host localhost;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
@@ -229,7 +234,7 @@ server {
     # Django admin endpoints
     location /admin/ {
         proxy_pass http://phonemanager_backend;
-        proxy_set_header Host \$host;
+        proxy_set_header Host localhost;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
