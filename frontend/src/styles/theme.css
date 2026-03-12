@@ -1,0 +1,14 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (c) 2026 Slinky Software
+ */
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#q-app {
+  background-color: #121212;
+  color: #f5f5f5;
+}

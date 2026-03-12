@@ -5,7 +5,7 @@ export default function () {
   return {
     framework: {
       config: {
-        dark: 'auto',
+        dark: true,
         brand: {
           primary: '#0fa36b',
           secondary: '#0b6e4f',

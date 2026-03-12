@@ -3,13 +3,14 @@
  */
 
 import { createApp } from 'vue';
-import { Quasar } from 'quasar';
+import { Dark, Quasar } from 'quasar';
 import { createPinia } from 'pinia';
 import router from './router';
 import App from './App.vue';
 
 import 'quasar/src/css/index.sass';
 import '@quasar/extras/material-icons/material-icons.css';
+import './styles/theme.css';
 
 const app = createApp(App);
 app.use(Quasar, {
@@ -23,6 +24,7 @@ app.use(Quasar, {
     }
   }
 });
+Dark.set(true);
 app.use(createPinia());
 app.use(router);
 app.mount('#q-app');
