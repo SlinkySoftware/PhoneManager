@@ -119,10 +119,10 @@ restart_gunicorn() {
 main() {
   require_root
   validate_paths
-  ensure_ownership
 
   log "Starting application upgrade"
   update_source_code
+  ensure_ownership
   upgrade_backend_dependencies
   upgrade_frontend_dependencies
   run_migrations
@@ -134,8 +134,8 @@ main() {
 Upgrade completed successfully.
 
 Executed steps:
-1. Ensured file ownership under APP_DIR
-2. Pulled latest source code from git remote
+1. Pulled latest source code from git remote
+2. Ensured file ownership under APP_DIR
 3. Updated Python packages from backend/requirements.txt
 4. Updated Node.js packages from frontend/package-lock.json/package.json
 5. Ran Django migrations

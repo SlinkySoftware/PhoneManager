@@ -97,6 +97,23 @@ ensure_app_user() {
   fi
 
   usermod -a -G "$APP_GROUP" "$APP_USER" || true
+}
+
+update_source_code() {
+  if [[ ! -d "$APP_DIR/.git" ]]; then
+    log "No git repository found at $APP_DIR, skipping source update"
+    return
+  fi
+
+  log "Fetching latest source code"
+  git -C "$APP_DIR" fetch --all --prune
+
+  log "Pulling latest changes"
+  git -C "$APP_DIR" pull --ff-only
+}
+
+ensure_app_ownership() {
+  log "Ensuring file ownership for application directory"
   chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
 }
 
@@ -271,6 +288,8 @@ main() {
   log "Starting bare-metal RHEL installation"
   ensure_python_312
   ensure_app_user
+  update_source_code
+  ensure_app_ownership
   setup_backend_venv
   write_backend_env
   run_migrations
