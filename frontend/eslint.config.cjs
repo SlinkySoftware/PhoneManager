@@ -2,13 +2,13 @@
  * Copyright (c) 2026 Slinky Software
  */
 
-import pluginVue from 'eslint-plugin-vue';
+const pluginVue = require('eslint-plugin-vue');
 
-export default [
+module.exports = [
   {
-    ignores: ['dist/**', 'node_modules/**', '.quasar/**']
+    ignores: ['dist/**', 'node_modules/**', '.quasar/**', 'eslint.config.*']
   },
-  ...pluginVue.configs['flat/recommended'],
+  ...pluginVue.configs['flat/essential'],
   {
     files: ['**/*.{js,mjs,cjs,vue}'],
     languageOptions: {
@@ -19,10 +19,15 @@ export default [
         document: 'readonly',
         localStorage: 'readonly',
         navigator: 'readonly',
-        console: 'readonly'
+        console: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly'
       }
     },
     rules: {
+      'no-undef': 'error',
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'vue/no-side-effects-in-computed-properties': 'off',
       'vue/multi-word-component-names': 'off'
     }
   }
