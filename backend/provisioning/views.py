@@ -25,6 +25,7 @@ class DeviceTypeSerializer(serializers.Serializer):
     manufacturer = serializers.CharField(source="Manufacturer")
     model = serializers.CharField(source="Model")
     numberOfLines = serializers.IntegerField(source="NumberOfLines")
+    supportsSipServersPerLine = serializers.BooleanField(source="SupportsSIPServersPerLine")
     commonOptions = serializers.JSONField(source="CommonOptions")
     deviceSpecificOptions = serializers.JSONField(source="DeviceSpecificOptions")
 
@@ -113,6 +114,7 @@ class ProvisioningViewSet(viewsets.ViewSet):
             NumberOfLines=device_type_cls.NumberOfLines,
             CommonOptions=device_type_cls.CommonOptions,
             DeviceSpecificOptions=device_type_cls.DeviceSpecificOptions,
+            SupportsSIPServersPerLine=device_type_cls.SupportsSIPServersPerLine,
             ContentType=device_type_cls.ContentType,
             UserAgentPatterns=device_type_cls.UserAgentPatterns,
         )

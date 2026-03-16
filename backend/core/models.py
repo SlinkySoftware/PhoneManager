@@ -318,6 +318,7 @@ class Device(models.Model):
     site = models.ForeignKey(Site, on_delete=models.PROTECT, related_name="devices")
     line_1 = models.ForeignKey(Line, on_delete=models.PROTECT, related_name="primary_devices")
     lines = models.ManyToManyField(Line, related_name="devices", blank=True)
+    line_configuration = models.JSONField(default=dict, blank=True)
     device_specific_configuration = models.JSONField(default=dict, blank=True)
     enabled = models.BooleanField(default=True)
     last_provisioned_at = models.DateTimeField(null=True, blank=True, help_text="Last time device configuration was requested")

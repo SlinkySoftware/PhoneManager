@@ -11,6 +11,7 @@ import re
 
 import pytz
 
+from core.models import SIPServer
 from .base import DeviceType
 
 
@@ -520,6 +521,7 @@ class YealinkSIPT33G(DeviceType):
     Manufacturer = "Yealink"
     Model = "SIP-T33G"
     NumberOfLines = 4
+    SupportsSIPServersPerLine = True
     CommonOptions = COMMON_OPTIONS
     DeviceSpecificOptions = DEVICE_OPTIONS
     ContentType = "text/plain"
@@ -758,6 +760,35 @@ class YealinkSIPT33G(DeviceType):
         site = device.site
         primary = site.primary_sip_server
         secondary = getattr(site, "secondary_sip_server", None)
+
+        line_configuration = getattr(device, "line_configuration", {}) or {}
+        override_server_ids = set()
+        for line_key, line_cfg in line_configuration.items():
+            if not isinstance(line_cfg, dict) or not line_cfg.get("use_different_sip_server"):
+                continue
+            primary_id = line_cfg.get("primary_sip_server")
+            secondary_id = line_cfg.get("secondary_sip_server")
+            if primary_id:
+                override_server_ids.add(primary_id)
+            if secondary_id:
+                override_server_ids.add(secondary_id)
+        sip_server_map = {
+            srv.id: srv for srv in SIPServer.objects.filter(id__in=override_server_ids)
+        }
+
+        def get_line_sip_servers(line_number: int):
+            if line_number <= 1:
+                return primary, secondary
+
+            line_cfg = line_configuration.get(str(line_number))
+            if not isinstance(line_cfg, dict) or not line_cfg.get("use_different_sip_server"):
+                return primary, secondary
+
+            selected_primary = sip_server_map.get(line_cfg.get("primary_sip_server"))
+            if not selected_primary:
+                return primary, secondary
+            selected_secondary = sip_server_map.get(line_cfg.get("secondary_sip_server"))
+            return selected_primary, selected_secondary
 
 
 
@@ -999,6 +1030,7 @@ class YealinkSIPT33G(DeviceType):
 
         # Per-account rendering
         for idx, line in enumerate(lines, start=1):
+            line_primary, line_secondary = get_line_sip_servers(idx)
 
             line_label = getattr(line, "phone_label", "") or line.name
 
@@ -1012,16 +1044,16 @@ class YealinkSIPT33G(DeviceType):
                     f"account.{idx}.user_name = {line.registration_account}",
                     f"account.{idx}.password = {line.registration_password}",
                     f"account.{idx}.shared_line = {bool_flag(getattr(line, 'is_shared', False))}",
-                    f"account.{idx}.sip_server.1.address = {primary.host}",
-                    f"account.{idx}.sip_server.1.port = {primary.port}",
-                    f"account.{idx}.sip_server.1.transport_type = {transport_map.get(primary.transport.upper(), 0)}",
+                    f"account.{idx}.sip_server.1.address = {line_primary.host}",
+                    f"account.{idx}.sip_server.1.port = {line_primary.port}",
+                    f"account.{idx}.sip_server.1.transport_type = {transport_map.get(line_primary.transport.upper(), 0)}",
                     f"account.{idx}.sip_server.1.expires = {server_expires}",
                     f"account.{idx}.sip_server.1.retry_counts = {retry_counts}",
-                    f"account.{idx}.sip_server.2.address = {secondary.host if secondary else ''}",
-                    f"account.{idx}.sip_server.2.port = {secondary.port if secondary else ''}",
-                    f"account.{idx}.sip_server.2.transport_type = {transport_map.get(secondary.transport.upper(), 0) if secondary else ''}",
-                    f"account.{idx}.sip_server.2.expires = {server_expires if secondary else ''}",
-                    f"account.{idx}.sip_server.2.retry_counts = {retry_counts if secondary else ''}",
+                    f"account.{idx}.sip_server.2.address = {line_secondary.host if line_secondary else ''}",
+                    f"account.{idx}.sip_server.2.port = {line_secondary.port if line_secondary else ''}",
+                    f"account.{idx}.sip_server.2.transport_type = {transport_map.get(line_secondary.transport.upper(), 0) if line_secondary else ''}",
+                    f"account.{idx}.sip_server.2.expires = {server_expires if line_secondary else ''}",
+                    f"account.{idx}.sip_server.2.retry_counts = {retry_counts if line_secondary else ''}",
                     f"account.{idx}.nat.rport = {bool_flag(enable_rport)}",
                     f"account.{idx}.nat.udp_update_enable = {keepalive_map.get(nat_udp_update_type, 2)}",
                     f"account.{idx}.nat.udp_update_time = {nat_udp_update_time}",
@@ -1045,11 +1077,11 @@ class YealinkSIPT33G(DeviceType):
                     f"account.{idx}.sip_server.1.invite_retry_counts = {invite_retry_count}",
                     f"account.{idx}.sip_server.1.failback_mode = {failback_mode_map.get(failback_mode, 3)}",
                     f"account.{idx}.sip_server.1.failback_timeout = {failback_duration}", 
-                    f"account.{idx}.sip_server.2.register_on_enable = {bool_flag(register_on_active) if secondary else ''}",
-                    f"account.{idx}.sip_server.2.only_signal_with_registered = {bool_flag(signal_with_registered_only) if secondary else ''}",
-                    f"account.{idx}.sip_server.2.invite_retry_counts = {invite_retry_count if secondary else ''}",
-                    f"account.{idx}.sip_server.2.failback_mode = {failback_mode_map.get(failback_mode, 3) if secondary else ''}",   
-                    f"account.{idx}.sip_server.2.failback_timeout = {failback_duration if secondary else ''}",
+                    f"account.{idx}.sip_server.2.register_on_enable = {bool_flag(register_on_active) if line_secondary else ''}",
+                    f"account.{idx}.sip_server.2.only_signal_with_registered = {bool_flag(signal_with_registered_only) if line_secondary else ''}",
+                    f"account.{idx}.sip_server.2.invite_retry_counts = {invite_retry_count if line_secondary else ''}",
+                    f"account.{idx}.sip_server.2.failback_mode = {failback_mode_map.get(failback_mode, 3) if line_secondary else ''}",
+                    f"account.{idx}.sip_server.2.failback_timeout = {failback_duration if line_secondary else ''}",
                 ]
             )
 
@@ -1082,9 +1114,9 @@ class YealinkSIPT33G(DeviceType):
             if vq_enable:
                 config_lines.extend(
                     [
-                        f"account.{idx}.vq_rtcpxr.collector_name = {primary.host}",
-                        f"account.{idx}.vq_rtcpxr.collector_server_host = {primary.host}",
-                        f"account.{idx}.vq_rtcpxr.collector_server_port = {primary.port}",
+                        f"account.{idx}.vq_rtcpxr.collector_name = {line_primary.host}",
+                        f"account.{idx}.vq_rtcpxr.collector_server_host = {line_primary.host}",
+                        f"account.{idx}.vq_rtcpxr.collector_server_port = {line_primary.port}",
 
                     ]
                 )

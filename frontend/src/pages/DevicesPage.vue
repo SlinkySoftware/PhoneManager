@@ -137,6 +137,57 @@
                   :disable="isReadOnly"
                   :rules="lineIdx === 1 ? [val => val !== null || 'Line 1 is required'] : []"
                 />
+
+                <div
+                  v-for="lineIdx in selectedDeviceType.numberOfLines"
+                  :key="`line-sip-${lineIdx}`"
+                  v-show="supportsSipServersPerLine && lineIdx > 1 && formLines[lineIdx - 1] !== null && formLines[lineIdx - 1] !== undefined"
+                  class="q-pl-sm q-pr-sm q-pb-sm"
+                >
+                  <q-checkbox
+                    :model-value="lineSipSelection(lineIdx).useDifferentSipServer"
+                    :label="`Line ${lineIdx}: Use different SIP Server`"
+                    color="teal"
+                    :disable="isReadOnly"
+                    @update:model-value="onToggleLineDifferentSipServer(lineIdx, $event)"
+                  />
+
+                  <div v-if="lineSipSelection(lineIdx).useDifferentSipServer" class="row q-col-gutter-md q-mt-xs">
+                    <div class="col-12 col-md-6">
+                      <q-select
+                        v-model="lineSipSelection(lineIdx).primarySipServer"
+                        :options="lineSipServerOptions(lineIdx, 'primary')"
+                        option-value="id"
+                        option-label="label"
+                        emit-value
+                        map-options
+                        label="Primary SIP Server"
+                        dense
+                        outlined
+                        dark
+                        color="teal"
+                        :disable="isReadOnly"
+                      />
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <q-select
+                        v-model="lineSipSelection(lineIdx).secondarySipServer"
+                        :options="lineSipServerOptions(lineIdx, 'secondary')"
+                        option-value="id"
+                        option-label="label"
+                        emit-value
+                        map-options
+                        clearable
+                        label="Backup SIP Server"
+                        dense
+                        outlined
+                        dark
+                        color="teal"
+                        :disable="isReadOnly"
+                      />
+                    </div>
+                  </div>
+                </div>
               </q-card-section>
             </q-card>
 
@@ -437,6 +488,7 @@ const devices = ref([]);
 const deviceTypes = ref([]);
 const sites = ref([]);
 const lines = ref([]);
+const sipServers = ref([]);
 const loading = ref(false);
 const saving = ref(false);
 const dialog = ref(false);
@@ -449,6 +501,7 @@ const resetConfirmDialog = ref(false);
 const formHasChanges = ref(false);
 const originalForm = ref(null);
 const originalLines = ref(null);
+const originalLineServerConfig = ref(null);
 const originalConfig = ref(null);
 const lineDisassociationWarning = ref('');
 
@@ -464,6 +517,7 @@ const emptyForm = () => ({
 });
 const form = ref(emptyForm());
 const formLines = ref([]);
+const lineServerConfig = ref({});
 const deviceConfigValues = ref({});
 const passwordFieldsChanged = ref({});
 const deviceTypeDefaults = ref({});
@@ -515,6 +569,71 @@ const selectedDeviceType = computed(() => {
   if (!form.value.device_type_id) return null;
   return deviceTypes.value.find(dt => dt.typeId === form.value.device_type_id);
 });
+
+const supportsSipServersPerLine = computed(() => !!selectedDeviceType.value?.supportsSipServersPerLine);
+
+const resetLineServerConfig = (lineCount, incoming = {}) => {
+  const next = {};
+  for (let lineNumber = 2; lineNumber <= lineCount; lineNumber += 1) {
+    const cfg = incoming?.[String(lineNumber)] || {};
+    next[String(lineNumber)] = {
+      useDifferentSipServer: !!cfg.use_different_sip_server,
+      primarySipServer: cfg.primary_sip_server ?? null,
+      secondarySipServer: cfg.secondary_sip_server ?? null
+    };
+  }
+  lineServerConfig.value = next;
+};
+
+const lineSipSelection = (lineNumber) => {
+  const key = String(lineNumber);
+  if (!lineServerConfig.value[key]) {
+    lineServerConfig.value[key] = {
+      useDifferentSipServer: false,
+      primarySipServer: null,
+      secondarySipServer: null
+    };
+  }
+  return lineServerConfig.value[key];
+};
+
+const onToggleLineDifferentSipServer = (lineNumber, enabled) => {
+  const lineCfg = lineSipSelection(lineNumber);
+  lineCfg.useDifferentSipServer = !!enabled;
+  if (!enabled) {
+    lineCfg.primarySipServer = null;
+    lineCfg.secondarySipServer = null;
+  }
+};
+
+const lineSipServerOptions = (lineNumber, type) => {
+  const lineCfg = lineSipSelection(lineNumber);
+  return sipServers.value
+    .filter(server => {
+      if (type === 'primary') return server.id !== lineCfg.secondarySipServer;
+      if (type === 'secondary') return server.id !== lineCfg.primarySipServer;
+      return true;
+    })
+    .map(server => ({
+      ...server,
+      label: `${server.name} (${server.host}:${server.port}/${server.transport})`
+    }));
+};
+
+const buildLineConfigurationPayload = () => {
+  const payload = {};
+  Object.entries(lineServerConfig.value).forEach(([lineNumber, cfg]) => {
+    if (!cfg?.useDifferentSipServer || !cfg?.primarySipServer) return;
+    payload[lineNumber] = {
+      use_different_sip_server: true,
+      primary_sip_server: cfg.primarySipServer
+    };
+    if (cfg.secondarySipServer) {
+      payload[lineNumber].secondary_sip_server = cfg.secondarySipServer;
+    }
+  });
+  return payload;
+};
 
 const deviceTypeNameById = computed(() => {
   const map = {};
@@ -606,6 +725,11 @@ const loadSites = async () => {
 const loadLines = async () => {
   const { data } = await api.get('/lines/');
   lines.value = data;
+};
+
+const loadSipServers = async () => {
+  const { data } = await api.get('/sip-servers/');
+  sipServers.value = data.sort((a, b) => a.name.localeCompare(b.name));
 };
 
 const lineOptions = (index) => {
@@ -749,6 +873,7 @@ watch(
   async (newTypeId) => {
     if (!newTypeId) {
       formLines.value = [];
+      lineServerConfig.value = {};
       deviceConfigValues.value = {};
       lineDisassociationWarning.value = '';
       return;
@@ -780,6 +905,11 @@ watch(
       updatedLines.push(null);
     }
     formLines.value = updatedLines;
+    if (newType?.supportsSipServersPerLine) {
+      resetLineServerConfig(newCount);
+    } else {
+      lineServerConfig.value = {};
+    }
 
     lineDisassociationWarning.value = removed.length
       ? `${removed.length} number of lines will be disassociated from this device`
@@ -790,6 +920,7 @@ watch(
 const openCreate = () => {
   form.value = emptyForm();
   formLines.value = [];
+  lineServerConfig.value = {};
   // Initialize device config with defaults from selected device type
   deviceConfigValues.value = {};
   const deviceType = deviceTypes.value.find(dt => dt.typeId === form.value.device_type_id);
@@ -809,6 +940,7 @@ const openCreate = () => {
   lineDisassociationWarning.value = '';
   originalForm.value = null;
   originalLines.value = null;
+  originalLineServerConfig.value = null;
   originalConfig.value = null;
   formHasChanges.value = false;
   dialog.value = true;
@@ -843,6 +975,13 @@ const openEdit = async (row) => {
   
   // Load device-specific configuration
   deviceConfigValues.value = row.device_specific_configuration || {};
+
+  // Load dedicated line-level SIP server configuration
+  if (selectedDeviceType.value?.supportsSipServersPerLine) {
+    resetLineServerConfig(selectedDeviceType.value.numberOfLines, row.line_configuration || {});
+  } else {
+    lineServerConfig.value = {};
+  }
   
   // Clear password fields for security - user must enter new ones if they want to change them
   if (selectedDeviceType.value?.deviceSpecificOptions?.sections) {
@@ -866,6 +1005,7 @@ const openEdit = async (row) => {
   // Track original state for changes detection
   originalForm.value = JSON.parse(JSON.stringify(form.value));
   originalLines.value = JSON.parse(JSON.stringify(formLines.value));
+  originalLineServerConfig.value = JSON.parse(JSON.stringify(lineServerConfig.value));
   originalConfig.value = JSON.parse(JSON.stringify(deviceConfigValues.value));
   formHasChanges.value = false;
   
@@ -918,6 +1058,12 @@ const openClone = async (row) => {
       const line = lines.value.find(l => l.id === lineId);
       return (line && line.is_shared) ? lineId : null;
     });
+
+    if (selectedDeviceType.value.supportsSipServersPerLine) {
+      resetLineServerConfig(selectedDeviceType.value.numberOfLines);
+    } else {
+      lineServerConfig.value = {};
+    }
   }
   
   // Copy device-specific configuration with doNotClone flag handling
@@ -971,6 +1117,7 @@ const openClone = async (row) => {
   // Track as new device (no original state to compare against)
   originalForm.value = null;
   originalLines.value = null;
+  originalLineServerConfig.value = null;
   originalConfig.value = null;
   formHasChanges.value = false;
   
@@ -1004,6 +1151,22 @@ const save = async () => {
     errorMessage.value = 'Line 1 is required';
     return;
   }
+  if (supportsSipServersPerLine.value) {
+    for (let lineNumber = 2; lineNumber <= (selectedDeviceType.value?.numberOfLines || 1); lineNumber += 1) {
+      const hasLineAssigned = formLines.value[lineNumber - 1] !== null && formLines.value[lineNumber - 1] !== undefined;
+      if (!hasLineAssigned) continue;
+      const lineCfg = lineSipSelection(lineNumber);
+      if (!lineCfg.useDifferentSipServer) continue;
+      if (!lineCfg.primarySipServer) {
+        errorMessage.value = `Line ${lineNumber} requires a primary SIP server when override is enabled`;
+        return;
+      }
+      if (lineCfg.secondarySipServer && lineCfg.secondarySipServer === lineCfg.primarySipServer) {
+        errorMessage.value = `Line ${lineNumber} primary and backup SIP server must be different`;
+        return;
+      }
+    }
+  }
 
   saving.value = true;
   try {
@@ -1029,6 +1192,7 @@ const save = async () => {
       ...form.value,
       line_1: formLines.value[0],
       lines: formLines.value.slice(1).filter(v => v !== null && v !== undefined),
+      line_configuration: supportsSipServersPerLine.value ? buildLineConfigurationPayload() : {},
       device_specific_configuration: configToSend
     };
     
@@ -1067,8 +1231,9 @@ const checkFormChanges = () => {
   if (!originalForm.value) return false;
   const formChanged = JSON.stringify(form.value) !== JSON.stringify(originalForm.value);
   const linesChanged = JSON.stringify(formLines.value) !== JSON.stringify(originalLines.value);
+  const lineServerChanged = JSON.stringify(lineServerConfig.value) !== JSON.stringify(originalLineServerConfig.value || {});
   const configChanged = JSON.stringify(deviceConfigValues.value) !== JSON.stringify(originalConfig.value);
-  formHasChanges.value = formChanged || linesChanged || configChanged;
+  formHasChanges.value = formChanged || linesChanged || lineServerChanged || configChanged;
   return formHasChanges.value;
 };
 
@@ -1113,12 +1278,26 @@ const performResetDeviceOptions = async () => {
 };
 
 watch(
-  () => [form.value, formLines.value, deviceConfigValues.value],
+  () => [form.value, formLines.value, lineServerConfig.value, deviceConfigValues.value],
   () => checkFormChanges(),
   { deep: true }
 );
 
+watch(
+  () => formLines.value,
+  (newLines) => {
+    if (!supportsSipServersPerLine.value) return;
+    for (let lineNumber = 2; lineNumber <= (selectedDeviceType.value?.numberOfLines || 1); lineNumber += 1) {
+      const hasLineAssigned = newLines[lineNumber - 1] !== null && newLines[lineNumber - 1] !== undefined;
+      if (!hasLineAssigned) {
+        onToggleLineDifferentSipServer(lineNumber, false);
+      }
+    }
+  },
+  { deep: true }
+);
+
 onMounted(async () => {
-  await Promise.all([loadDevices(), loadDeviceTypes(), loadSites(), loadLines()]);
+  await Promise.all([loadDevices(), loadDeviceTypes(), loadSites(), loadLines(), loadSipServers()]);
 });
 </script>

@@ -356,6 +356,7 @@ class GrandstreamHT812(DeviceType):
     Manufacturer = "Grandstream"
     Model = "HT812"
     NumberOfLines = 2
+    SupportsSIPServersPerLine = False
     CommonOptions = COMMON_OPTIONS
     DeviceSpecificOptions = DEVICE_OPTIONS
     ContentType = "text/xml"

@@ -151,6 +151,7 @@ class DeviceSerializer(serializers.ModelSerializer):
             "site",
             "line_1",
             "lines",
+            "line_configuration",
             "device_specific_configuration",
             "enabled",
             "last_provisioned_at",
@@ -205,6 +206,7 @@ class DeviceSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         instance = getattr(self, "instance", None)
         device_type_id = attrs.get("device_type_id") or (instance.device_type_id if instance else None)
+        device_type_cls = get_device_type(device_type_id)
         max_lines = self._get_max_lines(device_type_id)
 
         # Line 1 is required
@@ -271,6 +273,78 @@ class DeviceSerializer(serializers.ModelSerializer):
                         "lines": f"Line {db_line.name} ({db_line.directory_number}) is already assigned to another device",
                     }
                 )
+
+        # Validate dedicated line-level configuration schema
+        supports_per_line_sip = bool(getattr(device_type_cls, "SupportsSIPServersPerLine", False)) if device_type_cls else False
+        raw_line_config = attrs.get("line_configuration", instance.line_configuration if instance else {})
+
+        if not supports_per_line_sip:
+            attrs["line_configuration"] = {}
+        else:
+            if raw_line_config is None:
+                raw_line_config = {}
+            if not isinstance(raw_line_config, dict):
+                raise serializers.ValidationError({"line_configuration": "Line configuration must be an object"})
+
+            cleaned_line_config = {}
+            sip_server_cache = {}
+
+            def _get_sip_server(server_id):
+                if server_id not in sip_server_cache:
+                    sip_server_cache[server_id] = SIPServer.objects.filter(pk=server_id).first()
+                return sip_server_cache[server_id]
+
+            for line_key, line_cfg in raw_line_config.items():
+                try:
+                    line_number = int(line_key)
+                except (TypeError, ValueError):
+                    raise serializers.ValidationError({"line_configuration": f"Invalid line number key: {line_key}"})
+
+                if line_number < 2 or line_number > max_lines:
+                    raise serializers.ValidationError(
+                        {"line_configuration": f"Line configuration is only valid for lines 2 through {max_lines}"}
+                    )
+
+                if not isinstance(line_cfg, dict):
+                    raise serializers.ValidationError({"line_configuration": f"Line {line_number} configuration must be an object"})
+
+                use_different = bool(line_cfg.get("use_different_sip_server", False))
+                if not use_different:
+                    continue
+
+                primary_id = line_cfg.get("primary_sip_server")
+                secondary_id = line_cfg.get("secondary_sip_server")
+
+                if not primary_id:
+                    raise serializers.ValidationError(
+                        {"line_configuration": f"Line {line_number} requires a primary SIP server when override is enabled"}
+                    )
+
+                primary_server = _get_sip_server(primary_id)
+                if not primary_server:
+                    raise serializers.ValidationError({"line_configuration": f"Line {line_number} primary SIP server is invalid"})
+
+                cleaned_entry = {
+                    "use_different_sip_server": True,
+                    "primary_sip_server": primary_server.id,
+                }
+
+                if secondary_id:
+                    if secondary_id == primary_server.id:
+                        raise serializers.ValidationError(
+                            {"line_configuration": f"Line {line_number} primary and backup SIP server must be different"}
+                        )
+
+                    secondary_server = _get_sip_server(secondary_id)
+                    if not secondary_server:
+                        raise serializers.ValidationError(
+                            {"line_configuration": f"Line {line_number} backup SIP server is invalid"}
+                        )
+                    cleaned_entry["secondary_sip_server"] = secondary_server.id
+
+                cleaned_line_config[str(line_number)] = cleaned_entry
+
+            attrs["line_configuration"] = cleaned_line_config
 
         # Preserve overlapping device-specific configuration keys on type change
         allowed_keys = self._allowed_option_ids(device_type_id)

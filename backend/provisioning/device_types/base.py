@@ -19,6 +19,7 @@ class DeviceType:
     NumberOfLines: int
     CommonOptions: Dict[str, Any]
     DeviceSpecificOptions: Dict[str, Any]
+    SupportsSIPServersPerLine: bool = False
     ContentType: str = "text/plain"  # HTTP Content-Type for rendered configuration
     UserAgentPatterns: Tuple[str, ...] = ()
 

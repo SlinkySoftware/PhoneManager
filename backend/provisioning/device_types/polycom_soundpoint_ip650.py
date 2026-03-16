@@ -10,6 +10,7 @@ import re
 import pytz
 from pytz import AmbiguousTimeError, NonExistentTimeError
 
+from core.models import SIPServer
 from .base import DeviceType
 
 
@@ -419,6 +420,7 @@ class PolycomSoundPointIP650(DeviceType):
     Manufacturer = "Polycom"
     Model = "SoundPoint IP650"
     NumberOfLines = 6
+    SupportsSIPServersPerLine = True
     CommonOptions = COMMON_OPTIONS
     DeviceSpecificOptions = DEVICE_OPTIONS
     ContentType = "application/xml"
@@ -691,6 +693,38 @@ class PolycomSoundPointIP650(DeviceType):
         
         # Convert retry timeout to milliseconds
         sip_retry_timeout_ms = sip_retry_timeout * 1000
+
+        primary_site_server = site.primary_sip_server if site else None
+        secondary_site_server = site.secondary_sip_server if site else None
+
+        line_configuration = getattr(device, "line_configuration", {}) or {}
+        override_server_ids = set()
+        for line_key, line_cfg in line_configuration.items():
+            if not isinstance(line_cfg, dict) or not line_cfg.get("use_different_sip_server"):
+                continue
+            primary_id = line_cfg.get("primary_sip_server")
+            secondary_id = line_cfg.get("secondary_sip_server")
+            if primary_id:
+                override_server_ids.add(primary_id)
+            if secondary_id:
+                override_server_ids.add(secondary_id)
+        sip_server_map = {
+            srv.id: srv for srv in SIPServer.objects.filter(id__in=override_server_ids)
+        }
+
+        def get_line_sip_servers(line_number: int):
+            if line_number <= 1:
+                return primary_site_server, secondary_site_server
+
+            line_cfg = line_configuration.get(str(line_number))
+            if not isinstance(line_cfg, dict) or not line_cfg.get("use_different_sip_server"):
+                return primary_site_server, secondary_site_server
+
+            selected_primary = sip_server_map.get(line_cfg.get("primary_sip_server"))
+            if not selected_primary:
+                return primary_site_server, secondary_site_server
+            selected_secondary = sip_server_map.get(line_cfg.get("secondary_sip_server"))
+            return selected_primary, selected_secondary
         
         # Build codec priorities from orderedmultiselect array
         codec_map = {
@@ -779,8 +813,8 @@ class PolycomSoundPointIP650(DeviceType):
             attrs["device.syslog.prependMac"] = "1"
         
         # Add SIP server from site
-        if site and site.primary_sip_server:
-            sip_server = site.primary_sip_server
+        if primary_site_server:
+            sip_server = primary_site_server
             attrs["voIpProt.server.1.address"] = escape(sip_server.host)
             attrs["voIpProt.server.1.port"] = str(sip_server.port)
         
@@ -791,9 +825,14 @@ class PolycomSoundPointIP650(DeviceType):
             # Get line if available
             if idx <= len(lines):
                 line = lines[idx - 1]
+                line_primary, line_secondary = get_line_sip_servers(line_num)
                 
                 # Registration parameters
                 attrs[f"reg.{line_num}.server.1.register"] = "1"
+                attrs[f"reg.{line_num}.server.1.address"] = escape(line_primary.host) if line_primary else ""
+                attrs[f"reg.{line_num}.server.1.port"] = str(line_primary.port) if line_primary else ""
+                attrs[f"reg.{line_num}.server.2.address"] = escape(line_secondary.host) if line_secondary else ""
+                attrs[f"reg.{line_num}.server.2.port"] = str(line_secondary.port) if line_secondary else ""
                 attrs[f"reg.{line_num}.server.1.expires"] = str(sip_register_expires)
                 attrs[f"reg.{line_num}.server.1.retryTimeOut"] = str(sip_retry_timeout_ms)
                 attrs[f"reg.{line_num}.displayName"] = escape(line.name or "")
