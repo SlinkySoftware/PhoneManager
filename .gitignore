@@ -23,6 +23,7 @@ venv/
 .env.local
 .env.development
 .env.production
+config.yaml
 
 # Django
 *.sqlite3
