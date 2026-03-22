@@ -43,10 +43,24 @@ class UserProfile(models.Model):
         (ROLE_ADMIN, 'Administrator'),
         (ROLE_READONLY, 'Read Only'),
     ]
+    AUTH_SOURCE_LOCAL = 'local'
+    AUTH_SOURCE_SAML = 'saml'
+    AUTH_SOURCE_LDAP = 'ldap'
+    AUTH_SOURCE_CHOICES = [
+        (AUTH_SOURCE_LOCAL, 'Local'),
+        (AUTH_SOURCE_SAML, 'SAML'),
+        (AUTH_SOURCE_LDAP, 'LDAP'),
+    ]
     
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_READONLY)
     is_sso = models.BooleanField(default=False, help_text="True if user authenticates via SAML SSO")
+    auth_source = models.CharField(
+        max_length=20,
+        choices=AUTH_SOURCE_CHOICES,
+        default=AUTH_SOURCE_LOCAL,
+        help_text="Authentication source for this user account",
+    )
     force_password_reset = models.BooleanField(default=False, help_text="User must change password on next login")
     
     class Meta:
@@ -54,6 +68,16 @@ class UserProfile(models.Model):
     
     def __str__(self) -> str:
         return f"{self.user.username} ({self.get_role_display()})"
+
+    @property
+    def is_local(self) -> bool:
+        """Return True when password management is local to the application."""
+        return self.auth_source == self.AUTH_SOURCE_LOCAL
+
+    @property
+    def is_managed_externally(self) -> bool:
+        """Return True when credentials are managed by an external identity source."""
+        return self.auth_source in {self.AUTH_SOURCE_SAML, self.AUTH_SOURCE_LDAP}
 
 
 class SIPServer(models.Model):

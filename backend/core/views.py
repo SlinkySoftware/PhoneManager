@@ -20,6 +20,7 @@ import pytz
 
 from .config import config
 from .dialplan_utils import apply_dial_plan
+from .ldap import LDAPAuthHandler, LDAPAuthenticationError, LDAPConfigurationError
 from .models import Device, DeviceTypeConfig, DialPlan, Line, SIPServer, Site, UserProfile
 from .permissions import IsAdmin, IsAdminOrReadOnly
 from .saml import SAMLAuthHandler, prepare_django_request
@@ -34,6 +35,25 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def build_auth_response(user: User, profile: UserProfile) -> dict:
+    """Build the standard authentication response payload."""
+    return {
+        'token': Token.objects.get_or_create(user=user)[0].key,
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'is_staff': user.is_staff,
+            'role': profile.role,
+            'auth_source': profile.auth_source,
+            'auth_type_label': profile.get_auth_source_display(),
+            'force_password_reset': profile.force_password_reset,
+        }
+    }
 
 
 class AdminOrReadOnly(permissions.BasePermission):
@@ -79,38 +99,59 @@ def login(request):
         )
 
     # Get or create token
-    token, _ = Token.objects.get_or_create(user=user)
-    
     # Get or create user profile
     profile, _ = UserProfile.objects.get_or_create(
         user=user,
-        defaults={'role': UserProfile.ROLE_READONLY, 'is_sso': False}
+        defaults={
+            'role': UserProfile.ROLE_READONLY,
+            'is_sso': False,
+            'auth_source': UserProfile.AUTH_SOURCE_LOCAL,
+        }
     )
 
-    return Response({
-        'token': token.key,
-        'user': {
-            'id': user.id,
-            'username': user.username,
-            'email': user.email,
-            'first_name': user.first_name,
-            'last_name': user.last_name,
-            'is_staff': user.is_staff,
-            'role': profile.role,
-            'is_sso': profile.is_sso,
-            'force_password_reset': profile.force_password_reset,
-        }
-    }, status=status.HTTP_200_OK)
+    if profile.auth_source != UserProfile.AUTH_SOURCE_LOCAL:
+        return Response(
+            {'detail': 'This account uses external authentication. Select the correct login method.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    return Response(build_auth_response(user, profile), status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def ldap_login(request):
+    """Authenticate a user against LDAP and return the local API token."""
+    username = request.data.get('username')
+    password = request.data.get('password')
+
+    if not username or not password:
+        return Response(
+            {'detail': 'Username and password required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        result = LDAPAuthHandler().authenticate_user(username=username, password=password)
+    except LDAPConfigurationError as exc:
+        return Response({'detail': str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except LDAPAuthenticationError as exc:
+        return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+    except Exception as exc:
+        logger.exception('Unexpected LDAP authentication error: %s', exc)
+        return Response({'detail': 'LDAP authentication failed'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    if not result.user.is_active:
+        return Response({'detail': 'Account is disabled'}, status=status.HTTP_403_FORBIDDEN)
+
+    return Response(build_auth_response(result.user, result.profile), status=status.HTTP_200_OK)
 
 
 @api_view(['GET'])
 @permission_classes([permissions.AllowAny])
 def auth_config(request):
     """Return authentication configuration (SSO enabled status)."""
-    sso_enabled = config.get('SSO_ENABLED', default=False, env_var='SSO_ENABLED')
-    return Response({
-        'sso_enabled': sso_enabled
-    }, status=status.HTTP_200_OK)
+    return Response(config.get_auth_config(), status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])
@@ -122,13 +163,18 @@ def change_password(request):
     # Get or create profile
     profile, _ = UserProfile.objects.get_or_create(
         user=user,
-        defaults={'role': UserProfile.ROLE_READONLY, 'is_sso': False}
+        defaults={
+            'role': UserProfile.ROLE_READONLY,
+            'is_sso': False,
+            'auth_source': UserProfile.AUTH_SOURCE_LOCAL,
+        }
     )
     
-    # Check if user is SSO user
-    if profile.is_sso:
+    # Check if user is not locally authenticated
+    if not profile.is_local:
+        auth_label = profile.get_auth_source_display()
         return Response(
-            {'detail': 'SSO users cannot change passwords in this system. Please use your identity provider.'},
+            {'detail': f'{auth_label} users cannot change passwords in this system. Please use your identity provider or directory service.'},
             status=status.HTTP_403_FORBIDDEN
         )
     
@@ -240,29 +286,15 @@ def saml_acs(request):
             )
         
         # Get or create token
-        token, _ = Token.objects.get_or_create(user=user)
         profile = user.profile
         
         # Return token and user info
-        response_data = {
-            'token': token.key,
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email,
-                'first_name': user.first_name,
-                'last_name': user.last_name,
-                'is_staff': user.is_staff,
-                'role': profile.role,
-                'is_sso': profile.is_sso,
-                'force_password_reset': profile.force_password_reset,
-            }
-        }
+        response_data = build_auth_response(user, profile)
         
         # Redirect to frontend with token
         from django.shortcuts import redirect
         frontend_url = config.get('FRONTEND_URL', default='http://localhost:5173', env_var='FRONTEND_URL')
-        redirect_url = f"{frontend_url}/?token={token.key}"
+        redirect_url = f"{frontend_url}/?token={response_data['token']}"
         return redirect(redirect_url)
         
     except Exception as e:
@@ -578,6 +610,7 @@ class UserViewSet(viewsets.ModelViewSet):
             user=user,
             role=role,
             is_sso=False,
+            auth_source=UserProfile.AUTH_SOURCE_LOCAL,
             force_password_reset=True
         )
         
@@ -594,8 +627,15 @@ class UserViewSet(viewsets.ModelViewSet):
         """Update user details (email, first_name, last_name, role, force_password_reset)."""
         user = self.get_object()
         
-        # SSO users cannot have their role changed locally
-        if user.profile.is_sso and 'role' in request.data:
+        # LDAP users are view/deactivate only
+        if user.profile.auth_source == UserProfile.AUTH_SOURCE_LDAP:
+            return Response(
+                {'detail': 'LDAP users are managed by the central directory and cannot be edited locally.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # SAML users cannot have their role changed locally
+        if user.profile.auth_source == UserProfile.AUTH_SOURCE_SAML and 'role' in request.data:
             role_changed = request.data['role'] != user.profile.role
             if role_changed:
                 return Response(
@@ -613,7 +653,7 @@ class UserViewSet(viewsets.ModelViewSet):
         user.save()
         
         # Update profile fields
-        if 'role' in request.data and not user.profile.is_sso:
+        if 'role' in request.data and user.profile.is_local:
             valid_roles = [UserProfile.ROLE_ADMIN, UserProfile.ROLE_READONLY]
             role = request.data['role']
             if role not in valid_roles:
@@ -623,7 +663,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 )
             user.profile.role = role
         
-        if 'force_password_reset' in request.data and not user.profile.is_sso:
+        if 'force_password_reset' in request.data and user.profile.is_local:
             user.profile.force_password_reset = request.data['force_password_reset']
         
         user.profile.save()
@@ -644,15 +684,15 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Check if SSO user
+        # Check if externally managed user
         profile = getattr(user, 'profile', None)
-        if profile and profile.is_sso:
-            # Deactivate instead of delete (prevents auto-recreate on next SSO login)
+        if profile and profile.is_managed_externally:
+            # Deactivate instead of delete (prevents auto-recreate on next external login)
             user.is_active = False
             user.save()
-            logger.info(f"Deactivated SSO user: {user.username}")
+            logger.info("Deactivated %s user: %s", profile.auth_source, user.username)
             return Response(
-                {'detail': 'SSO user deactivated successfully'},
+                {'detail': f'{profile.get_auth_source_display()} user deactivated successfully'},
                 status=status.HTTP_200_OK
             )
         else:
@@ -673,13 +713,14 @@ class UserViewSet(viewsets.ModelViewSet):
             profile = UserProfile.objects.create(
                 user=user,
                 role=UserProfile.ROLE_READONLY,
-                is_sso=False
+                is_sso=False,
+                auth_source=UserProfile.AUTH_SOURCE_LOCAL,
             )
         
-        # Check if SSO user
-        if profile.is_sso:
+        # Check if externally managed user
+        if not profile.is_local:
             return Response(
-                {'detail': 'Cannot reset password for SSO users'},
+                {'detail': f'Cannot reset password for {profile.get_auth_source_display()} users'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         

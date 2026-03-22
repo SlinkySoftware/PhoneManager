@@ -185,15 +185,25 @@ class SAMLAuthHandler:
             defaults={
                 'role': role,
                 'is_sso': True,
+                'auth_source': UserProfile.AUTH_SOURCE_SAML,
                 'force_password_reset': False,
             }
         )
         
         # Update profile if role changed
         if not profile_created:
+            updated = False
             if profile.role != role:
                 logger.info(f"Updating role for {username}: {profile.role} -> {role}")
                 profile.role = role
+                updated = True
+            if profile.auth_source != UserProfile.AUTH_SOURCE_SAML:
+                profile.auth_source = UserProfile.AUTH_SOURCE_SAML
+                updated = True
+            if not profile.is_sso:
+                profile.is_sso = True
+                updated = True
+            if updated:
                 profile.save()
         
         logger.info(f"Provisioned SSO user: {username} with role: {role}")

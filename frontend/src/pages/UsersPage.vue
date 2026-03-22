@@ -52,11 +52,11 @@
         </q-td>
       </template>
 
-      <template v-slot:body-cell-is_sso="props">
+      <template v-slot:body-cell-auth_source="props">
         <q-td :props="props">
           <q-badge
-            :color="props.row.is_sso ? 'info' : 'orange'"
-            :label="props.row.is_sso ? 'SSO' : 'Local'"
+            :color="getAuthBadgeColor(props.row.auth_source)"
+            :label="props.row.auth_type_label || getAuthTypeLabel(props.row.auth_source)"
           />
         </q-td>
       </template>
@@ -79,6 +79,7 @@
           <!-- Hide action buttons for current user -->
           <template v-if="props.row.username !== authStore.currentUser?.username">
             <q-btn
+              v-if="props.row.auth_source !== 'ldap'"
               dense
               flat
               icon="edit"
@@ -88,7 +89,7 @@
               <q-tooltip>Edit User</q-tooltip>
             </q-btn>
             <q-btn
-              v-if="!props.row.is_sso"
+              v-if="props.row.auth_source === 'local'"
               dense
               flat
               icon="lock_reset"
@@ -257,27 +258,27 @@
             dense
             emit-value
             map-options
-            :disable="editingUser.is_sso"
+            :disable="editingUser.auth_source !== 'local'"
             class="q-mb-md"
             :rules="[val => !!val || 'Role is required']"
           >
-            <template v-if="editingUser.is_sso" v-slot:append>
+            <template v-if="editingUser.auth_source !== 'local'" v-slot:append>
               <q-icon name="lock" color="grey">
-                <q-tooltip>Role managed by SSO</q-tooltip>
+                <q-tooltip>Role managed by external authentication</q-tooltip>
               </q-icon>
             </template>
           </q-select>
 
           <q-checkbox
-            v-if="!editingUser.is_sso"
+            v-if="editingUser.auth_source === 'local'"
             v-model="editingUser.force_password_reset"
             label="Force Password Reset on Next Login"
             class="q-mb-md"
           />
 
-          <q-banner v-if="editingUser.is_sso" dense class="bg-info text-white q-mb-md">
+          <q-banner v-if="editingUser.auth_source !== 'local'" dense class="bg-info text-white q-mb-md">
             <q-icon name="info" class="q-mr-sm" />
-            SSO users have their role managed by the identity provider.
+            {{ getEditBannerMessage(editingUser) }}
           </q-banner>
         </q-card-section>
 
@@ -354,9 +355,9 @@
 
         <q-card-section>
           <p>Are you sure you want to delete user: <strong>{{ userToDelete?.username }}</strong>?</p>
-          <p v-if="userToDelete?.is_sso" class="text-caption text-info">
+          <p v-if="userToDelete && userToDelete.auth_source !== 'local'" class="text-caption text-info">
             <q-icon name="info" class="q-mr-xs" />
-            This is an SSO user. The account will be deactivated instead of deleted.
+            This is a {{ getAuthTypeLabel(userToDelete.auth_source) }} user. The account will be deactivated instead of deleted.
           </p>
           <p v-else class="text-caption text-grey-7">This action cannot be undone.</p>
         </q-card-section>
@@ -422,10 +423,37 @@ const columns = [
   { name: 'full_name', label: 'Full Name', field: 'full_name', align: 'left', sortable: true },
   { name: 'email', label: 'Email', field: 'email', align: 'left', sortable: true },
   { name: 'role', label: 'Role', field: 'role', align: 'left', sortable: true },
-  { name: 'is_sso', label: 'Type', field: 'is_sso', align: 'center', sortable: true },
+  { name: 'auth_source', label: 'Type', field: 'auth_source', align: 'center', sortable: true },
   { name: 'force_password_reset', label: 'Status', field: 'force_password_reset', align: 'center' },
   { name: 'actions', label: 'Actions', align: 'center' }
 ];
+
+const getAuthTypeLabel = (authSource) => {
+  if (authSource === 'ldap') {
+    return 'LDAP';
+  }
+  if (authSource === 'saml') {
+    return 'SAML';
+  }
+  return 'Local';
+};
+
+const getAuthBadgeColor = (authSource) => {
+  if (authSource === 'ldap') {
+    return 'deep-orange';
+  }
+  if (authSource === 'saml') {
+    return 'info';
+  }
+  return 'orange';
+};
+
+const getEditBannerMessage = (user) => {
+  if (user.auth_source === 'ldap') {
+    return 'LDAP users are managed by the central directory and can only be disabled locally.';
+  }
+  return 'SAML users have their role managed by the identity provider.';
+};
 
 // Helper function to extract error messages
 const extractErrorMessage = (error) => {
@@ -495,7 +523,8 @@ const openEditDialog = (user) => {
     last_name: user.last_name || '',
     email: user.email || '',
     role: user.role,
-    is_sso: user.is_sso,
+    auth_source: user.auth_source,
+    auth_type_label: user.auth_type_label,
     force_password_reset: user.force_password_reset
   };
   editError.value = '';

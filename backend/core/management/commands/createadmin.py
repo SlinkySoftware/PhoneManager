@@ -89,18 +89,19 @@ class Command(BaseCommand):
             )
 
             # Create or update admin profile (in case profile was created by login before)
-            profile, created = UserProfile.objects.update_or_create(
+            _, _ = UserProfile.objects.update_or_create(
                 user=user,
                 defaults={
                     'role': UserProfile.ROLE_ADMIN,
                     'is_sso': False,
+                    'auth_source': UserProfile.AUTH_SOURCE_LOCAL,
                     'force_password_reset': False
                 }
             )
 
             self.stdout.write(self.style.SUCCESS(f'Successfully created admin user: {username}'))
-            self.stdout.write(self.style.SUCCESS(f'Role: Administrator'))
-            self.stdout.write(self.style.SUCCESS(f'You can now log in with this account.'))
+            self.stdout.write(self.style.SUCCESS('Role: Administrator'))
+            self.stdout.write(self.style.SUCCESS('You can now log in with this account.'))
             
         except Exception as e:
             raise CommandError(f'Error creating admin user: {e}')

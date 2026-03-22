@@ -58,7 +58,7 @@
 
           <div class="col-12 col-md-6">
             <q-input
-              :model-value="user.is_sso ? 'SSO' : 'Local'"
+              :model-value="getAuthTypeLabel(user)"
               label="Authentication Type"
               outlined
               dense
@@ -74,7 +74,7 @@
     </q-card>
 
     <!-- Password Change Section (local users only) -->
-    <q-card v-if="!user.is_sso" class="q-mt-md">
+    <q-card v-if="isLocalUser" class="q-mt-md">
       <q-card-section>
         <div class="text-h6 q-mb-md">Change Password</div>
 
@@ -152,15 +152,15 @@
       </q-card-section>
     </q-card>
 
-    <!-- SSO User Notice -->
+    <!-- External Authentication Notice -->
     <q-card v-else class="q-mt-md">
       <q-card-section class="bg-info text-white">
         <div class="text-h6 q-mb-sm">
           <q-icon name="info" class="q-mr-sm" />
-          SSO Authentication
+          {{ getAuthTypeLabel(user) }} Authentication
         </div>
         <div>
-          Your account uses Single Sign-On (SSO) authentication. Password management is handled by your identity provider.
+          {{ getAuthNotice(user) }}
         </div>
       </q-card-section>
     </q-card>
@@ -174,6 +174,7 @@ import api from '../api';
 
 const authStore = useAuthStore();
 const user = computed(() => authStore.user || {});
+const isLocalUser = computed(() => user.value.auth_source === 'local' || !user.value.auth_source);
 
 const passwordForm = ref({
   oldPassword: '',
@@ -187,6 +188,15 @@ const loading = ref(false);
 
 const getRoleLabel = (role) => {
   return role === 'admin' ? 'Administrator' : 'Read Only';
+};
+
+const getAuthTypeLabel = (currentUser) => currentUser.auth_type_label || 'Local';
+
+const getAuthNotice = (currentUser) => {
+  if (currentUser.auth_source === 'ldap') {
+    return 'Your account uses LDAP authentication. Password management is handled by your central directory service.';
+  }
+  return 'Your account uses Single Sign-On (SSO) authentication. Password management is handled by your identity provider.';
 };
 
 const extractErrorMessage = (error) => {

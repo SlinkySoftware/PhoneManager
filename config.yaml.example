@@ -17,6 +17,23 @@ PROVISIONING_BASE_URL: ""
 # SSO/SAML Configuration
 SSO_ENABLED: false
 
+# LDAP Configuration
+LDAP_ENABLED: false
+LDAP_DISPLAY_NAME: "Central Authentication"
+LDAP_SERVER_NAME: ""
+LDAP_PORT: 389
+LDAP_ENCRYPTION: "none"  # one of: none, ssl, starttls
+LDAP_VALIDATE_CERTIFICATES: true
+LDAP_BIND_DN: ""
+LDAP_BIND_PASSWORD: ""
+LDAP_DOMAIN_NAME: ""
+LDAP_USERNAME_FORMAT: "%u"
+LDAP_GROUP_ATTRIBUTE: "memberOf"
+LDAP_ADMIN_GROUP_MAPPING: []
+LDAP_USER_GROUP_MAPPING: []
+LDAP_BASE_DN: ""
+LDAP_SEARCH_FILTER: "(|(userPrincipalName=%u)(sAMAccountName=%r)(uid=%r)(cn=%r))"
+
 # SAML Service Provider (SP) Settings
 # These values identify this application to the Identity Provider (IdP)
 SAML_SP_ENTITY_ID: "http://localhost:8000/api/auth/saml/metadata/"

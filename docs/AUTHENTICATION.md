@@ -4,191 +4,201 @@ This document describes the authentication system implemented for the Phone Prov
 
 ## Overview
 
-The application uses **Token-based Authentication** with the following components:
+The application uses token-based authentication for API access and supports three authentication sources:
+
+1. Local authentication
+2. LDAP authentication
+3. SAML SSO authentication
+
+All three sources return the same API token format after successful login. User records remain visible in the Users page with an `auth_source` of `local`, `ldap`, or `saml`.
 
 ### Frontend
-- **Login Page** (`src/pages/LoginPage.vue`): User login form with username/password
-- **Auth Store** (`src/stores/auth.js`): Pinia store managing authentication state with localStorage persistence
-- **API Client** (`src/api.js`): Axios instance with auto-token injection and 403 error handling
-- **Router Guards** (`src/router/index.js`): Automatic redirection to login for unauthenticated users
+
+- Login Page (`src/pages/LoginPage.vue`): user login form with a password-authentication method selector
+- Auth Store (`src/stores/auth.js`): Pinia store managing authentication state with localStorage persistence
+- API Client (`src/api.js`): Axios instance with automatic token injection and auth-error handling
+- Router Guards (`src/router/index.js`): automatic redirection to login for unauthenticated users
 
 ### Backend
-- **Login Endpoint** (`/api/auth/login/`): POST endpoint accepting username/password
-- **Token Authentication**: Django REST Framework Token Auth for protected endpoints
-- **Permission Classes**: `IsAdminOrReadOnly` (read for authenticated users, write for admins)
-- **SSO Endpoints**: `/api/auth/saml/*` with SAML login and ACS callback
+
+- Local Login Endpoint (`/api/auth/login/`): POST endpoint accepting locally managed username/password credentials
+- LDAP Login Endpoint (`/api/auth/ldap/login/`): POST endpoint accepting central-directory username/password credentials
+- Token Authentication: Django REST Framework token auth for protected endpoints
+- Permission Classes: `IsAdminOrReadOnly` for resource APIs and `IsAdmin` for user-management APIs
+- SSO Endpoints: `/api/auth/saml/*` for SAML login, ACS callback, and metadata
 
 ## Setup Instructions
 
-### 1. Backend Configuration
+### Backend Configuration
 
-The backend is already configured with:
-- `rest_framework.authtoken` app installed
-- Token authentication enabled in `REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES']`
-- Login endpoint implemented in `core/views.py`
+The backend requires:
 
-Verify by checking `backend/phone_manager/settings.py` includes:
-```python
-INSTALLED_APPS = [
-    ...
-    "rest_framework.authtoken",
-    ...
-]
+- `rest_framework.authtoken` in `INSTALLED_APPS`
+- Token authentication in `REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES']`
+- The authentication endpoints in `backend/core/views.py`
 
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.TokenAuthentication",
-    ],
-    ...
-}
-```
-
-### 2. Create Admin User
+### Create an Admin User
 
 Create an admin account for testing:
+
 ```bash
 cd backend
 python manage.py createadmin
 ```
 
-This command creates an admin user and profile (role=admin) in one step.
+### Frontend Configuration
 
-### 3. Frontend Configuration (Optional)
+If your frontend dev server runs on a different port, set the API base URL:
 
-If your frontend dev server runs on a different port, set the environment variable:
 ```bash
 export VITE_API_BASE=http://localhost:8000/api
 ```
 
-Default is `http://localhost:8000/api`.
+The default remains `http://localhost:8000/api`.
 
 ## Login Workflow
 
-1. User navigates to `http://localhost:5173/` (or similar)
-2. Router guard detects unauthenticated user and redirects to `/login`
-3. LoginPage component displays username/password form
-4. User submits credentials
-5. Frontend POSTs to `/api/auth/login/` with credentials
-6. Backend validates and returns:
-   ```json
-   {
-     "token": "abc123xyz...",
-     "user": {
-       "id": 1,
-       "username": "admin",
-       "email": "admin@example.com",
-       "is_staff": true,
-       "role": "admin",
-       "is_sso": false,
-       "force_password_reset": false,
-       ...
-     }
-   }
-   ```
-7. Auth store saves token and user to localStorage
-8. Router redirects to `/devices`
-9. All subsequent API requests include `Authorization: Token abc123xyz...` header
+1. The user navigates to <http://localhost:5173/>.
+2. The router redirects unauthenticated users to `/login`.
+3. The login page shows a password-authentication selector with `Local Authentication` and `Central Authentication`.
+4. The user submits credentials.
+5. The frontend posts to `/api/auth/login/` for Local auth or `/api/auth/ldap/login/` for Central auth.
+6. The backend validates credentials and returns a token plus user metadata.
+7. The auth store saves the token and user data in localStorage.
+8. The frontend redirects the user to `/devices`.
+9. Subsequent API requests include `Authorization: Token <token>`.
+
+Example login response:
+
+```json
+{
+  "token": "abc123xyz...",
+  "user": {
+    "id": 1,
+    "username": "admin",
+    "email": "admin@example.com",
+    "is_staff": true,
+    "role": "admin",
+    "auth_source": "local",
+    "auth_type_label": "Local",
+    "force_password_reset": false
+  }
+}
+```
+
+## Authentication Sources
+
+### Local
+
+- Credentials are stored in Django's user database.
+- Password changes and forced password resets are supported in-app.
+- Admins can create, edit, reset, and delete Local users.
+
+### LDAP
+
+- Credentials are validated against the configured LDAP directory.
+- The backend uses a three-stage LDAP flow: service bind, user lookup and group validation, then user bind.
+- LDAP users are auto-provisioned on first successful login.
+- Password changes are handled by the directory, not by the application.
+
+See [LDAP_SETUP.md](LDAP_SETUP.md) for the full LDAP configuration guide.
+
+### SAML
+
+- Authentication is delegated to a SAML 2.0 identity provider.
+- SAML users are auto-provisioned on first successful login.
+- Password changes are handled by the identity provider.
+
+See [SSO_SETUP.md](SSO_SETUP.md) for the full SAML setup guide.
+
+## Auth Configuration Endpoint
+
+The frontend uses `GET /api/auth/config/` to decide which login methods to expose.
+
+Example response:
+
+```json
+{
+  "sso_enabled": true,
+  "ldap_enabled": true,
+  "ldap_display_name": "Central Authentication",
+  "default_password_auth_method": "ldap"
+}
+```
+
+When LDAP is enabled, the password-authentication selector defaults to `Central Authentication`.
 
 ## API Requests
 
-### Authenticated Request Example
-```javascript
-// All requests automatically include the token
-const api = api.get('/device-types/');
+All authenticated API requests include the token automatically:
 
-// Header sent automatically:
-// Authorization: Token abc123xyz...
+```javascript
+const response = await api.get('/device-types/');
 ```
 
-### Response Handling
-- **401/403**: Token expired or invalid → User redirected to login
-- **200**: Normal response with data
-- **4xx/5xx**: Standard error handling
+The client sends:
+
+```text
+Authorization: Token abc123xyz...
+```
 
 ## Logout
 
-Users can logout by:
-1. Clicking the logout button (circular icon) in the top-right toolbar
-2. Token is cleared from localStorage
-3. Router redirects to `/login`
+Users can log out from the toolbar. Logout clears the stored token and user data, then redirects back to `/login`.
 
-## Security Notes
+## Testing Authentication
 
-- Tokens are stored in localStorage (accessible to JavaScript)
-- For production, consider:
-  - HTTPS-only communication
-  - HttpOnly cookie storage (requires backend changes)
-  - Token refresh mechanism
-  - CSRF protection headers
-- Session tokens are tied to user accounts
-- Implement token expiration for better security
+### cURL Examples
 
-## SSO Authentication
-
-The backend supports SAML 2.0 SSO when enabled via config.
-
-**Endpoints:**
-- `GET /api/auth/config/` - Returns `{ "sso_enabled": true|false }`
-- `GET /api/auth/saml/login/` - Initiate SSO flow
-- `POST /api/auth/saml/acs/` - Assertion consumer service callback
-- `GET /api/auth/saml/metadata/` - Service Provider metadata XML
-
-See [docs/SSO_SETUP.md](SSO_SETUP.md) for complete SSO configuration.
-
-## Testing the Authentication
-
-### Via cURL
 ```bash
-# Login
+# Local login
 curl -X POST http://localhost:8000/api/auth/login/ \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "your_password"}'
 
-# Use token in subsequent requests
+# LDAP login
+curl -X POST http://localhost:8000/api/auth/ldap/login/ \
+  -H "Content-Type: application/json" \
+  -d '{"username": "j.smith", "password": "your_password"}'
+
+# Authenticated request
 curl http://localhost:8000/api/device-types/ \
   -H "Authorization: Token <token_from_login>"
 ```
 
-### Via Frontend
-1. Load http://localhost:5173/
-2. Login with your superuser credentials
-3. Navigate between pages
-4. Check browser DevTools Network tab to see `Authorization` header
+### Frontend Verification
 
-## Files Modified
-
-- `frontend/src/pages/LoginPage.vue` - New login component
-- `frontend/src/stores/auth.js` - Updated with token persistence
-- `frontend/src/api.js` - New API client with auth interceptor
-- `frontend/src/router/index.js` - Added auth guards
-- `frontend/src/layouts/MainLayout.vue` - Added logout button
-- `frontend/src/pages/*.vue` - Updated to use shared API client
-- `backend/phone_manager/settings.py` - Added authtoken app
-- `backend/phone_manager/urls.py` - Added login endpoint
-- `backend/core/views.py` - Added login view
+1. Load <http://localhost:5173/>.
+2. Verify the correct login methods are shown.
+3. Log in with a test Local, LDAP, or SAML account.
+4. Confirm the token is stored and protected APIs succeed.
 
 ## Troubleshooting
 
-### 403 Forbidden on API calls
-- Verify user is logged in (check localStorage)
-- Check that token is being sent in Authorization header
-- Ensure user has appropriate permissions (must be authenticated at minimum)
+### 403 Forbidden On API Calls
 
-### Login fails with "Invalid username or password"
-- Verify user exists: `python manage.py shell` → `User.objects.all()`
-- Verify password is correct
-- Check browser console for error messages
+- Verify the user is logged in and the token is present in localStorage.
+- Verify the API client is sending the `Authorization` header.
+- Verify the user has the necessary role for the requested action.
 
-### CORS errors
-- Verify frontend URL is in `CORS_ALLOWED_ORIGINS` in settings.py
-- Common origins: `http://localhost:5173`, `http://localhost:3000`, `http://127.0.0.1:9000`
+### Login Fails With Invalid Username Or Password
 
-### Token not working
-- Ensure migrations ran: `python manage.py migrate`
-- Check Token table exists: `python manage.py shell` → `Token.objects.all()`
-- Regenerate token if needed: Delete token and login again
+- Verify the user exists in the expected identity source.
+- Verify the password is correct.
+- Check the backend logs for Local, LDAP, or SAML-specific failures.
 
-### Forced password reset
-- If `force_password_reset` is true, user must change password via `POST /api/auth/change-password/`
-- SSO users cannot change passwords via this endpoint
+### CORS Errors
+
+- Verify the frontend origin is present in `CORS_ALLOWED_ORIGINS`.
+- Common development origins are `http://localhost:5173`, `http://localhost:3000`, and `http://127.0.0.1:9000`.
+
+### Token Not Working
+
+- Ensure migrations have been applied.
+- Verify the DRF token table exists.
+- Delete the stale token and log in again if needed.
+
+### Forced Password Reset
+
+- If `force_password_reset` is true, a Local user must change their password via `POST /api/auth/change-password/`.
+- LDAP and SAML users cannot change passwords through the application.

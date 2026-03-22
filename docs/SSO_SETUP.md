@@ -2,9 +2,10 @@
 
 ## Overview
 
-The Phone Provisioning Manager supports two authentication methods:
+The Phone Provisioning Manager supports three authentication methods:
 1. **Local Authentication**: Username/password stored in application database
-2. **SAML SSO**: Single Sign-On via Microsoft Entra, Okta, or other SAML 2.0 IdPs
+2. **LDAP Authentication**: Username/password validated against a central LDAP directory
+3. **SAML SSO**: Single Sign-On via Microsoft Entra, Okta, or other SAML 2.0 IdPs
 
 Both methods support role-based access control with Admin and Read-Only roles.
 

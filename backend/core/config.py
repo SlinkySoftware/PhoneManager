@@ -133,6 +133,22 @@ class Config:
         
         return settings
 
+    def get_auth_config(self) -> Dict[str, Any]:
+        """Return frontend-facing authentication configuration."""
+        ldap_enabled = self.get('LDAP_ENABLED', default=False, env_var='LDAP_ENABLED')
+        sso_enabled = self.get('SSO_ENABLED', default=False, env_var='SSO_ENABLED')
+        default_method = 'ldap' if ldap_enabled else 'local'
+        return {
+            'sso_enabled': sso_enabled,
+            'ldap_enabled': ldap_enabled,
+            'ldap_display_name': self.get(
+                'LDAP_DISPLAY_NAME',
+                default='Central Authentication',
+                env_var='LDAP_DISPLAY_NAME',
+            ),
+            'default_password_auth_method': default_method,
+        }
+
 
 # Global config instance
 config = Config()

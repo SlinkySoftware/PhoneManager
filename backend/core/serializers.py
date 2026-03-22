@@ -506,22 +506,31 @@ class UserSerializer(serializers.ModelSerializer):
     """Serializer for User model with profile information."""
     
     role = serializers.SerializerMethodField()
-    is_sso = serializers.SerializerMethodField()
+    auth_source = serializers.SerializerMethodField()
+    auth_type_label = serializers.SerializerMethodField()
     force_password_reset = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'full_name', 'is_active', 'role', 'is_sso', 'force_password_reset']
-        read_only_fields = ['id', 'is_active', 'is_sso', 'full_name']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'full_name', 'is_active', 'role', 'auth_source', 'auth_type_label', 'force_password_reset']
+        read_only_fields = ['id', 'is_active', 'auth_source', 'auth_type_label', 'full_name']
     
     def get_role(self, obj):
         """Get user role from profile."""
         return obj.profile.role if hasattr(obj, 'profile') else UserProfile.ROLE_READONLY
     
-    def get_is_sso(self, obj):
-        """Get SSO status from profile."""
-        return obj.profile.is_sso if hasattr(obj, 'profile') else False
+    def get_auth_source(self, obj):
+        """Get authentication source from profile."""
+        if hasattr(obj, 'profile'):
+            return obj.profile.auth_source
+        return UserProfile.AUTH_SOURCE_LOCAL
+
+    def get_auth_type_label(self, obj):
+        """Get display label for authentication source."""
+        if hasattr(obj, 'profile'):
+            return obj.profile.get_auth_source_display()
+        return 'Local'
     
     def get_force_password_reset(self, obj):
         """Get force password reset flag from profile."""

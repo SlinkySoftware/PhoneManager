@@ -22,6 +22,7 @@ router.register(r"users", core_views.UserViewSet, basename="user")
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/login/", core_views.login, name="login"),
+    path("api/auth/ldap/login/", core_views.ldap_login, name="ldap_login"),
     path("api/auth/config/", core_views.auth_config, name="auth_config"),
     path("api/auth/change-password/", core_views.change_password, name="change_password"),
     path("api/auth/saml/login/", core_views.saml_login, name="saml_login"),

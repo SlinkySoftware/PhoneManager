@@ -85,7 +85,7 @@ Backend API will be available at http://localhost:8000/api
 - **Device Management**: CRUD operations for SIP devices with flexible provisioning
 - **Clone Device**: Rapid device provisioning by cloning existing configurations with intelligent line handling
 - **Site & Line Management**: Organize devices into sites with multi-line support
-- **Authentication**: Token-based authentication with local users and SAML SSO support
+- **Authentication**: Token-based authentication with Local, LDAP, and SAML SSO support
 - **Role-Based Access Control**: Admin and Read-Only user roles with UI enforcement
 - **User Management**: Admin-only user creation, password reset, and role assignment
 - **REST APIs**: Comprehensive REST endpoints for all resources
@@ -93,12 +93,14 @@ Backend API will be available at http://localhost:8000/api
 - **Device Types**: Pluggable renderer framework with configurable options
 - **Web UI**: Quasar SPA with dark mode and intuitive forms
 - **Error Handling**: Comprehensive validation and user-friendly error messages
+- **Directory Integration**: LDAP support with service-account lookup, group mapping, and per-user password validation
 - **SSO Integration**: SAML 2.0 support for Microsoft Entra, Okta, and other IdPs
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) - System design and data model
 - [Authentication](docs/AUTHENTICATION.md) - Login and token management
+- [LDAP Setup](docs/LDAP_SETUP.md) - Central authentication configuration and rollout
 - [Deployment](docs/DEPLOYMENT.md) - Production deployment guide
 - [Frontend Guidelines](docs/FRONTEND_GUIDELINES.md) - UI development standards
 - [Device Type Options](docs/DEVICE_TYPE_OPTIONS.md) - Configuration schema system

@@ -10,6 +10,17 @@
 
       <q-card-section class="q-pt-lg">
         <q-form @submit.prevent="handleLogin" class="q-gutter-md">
+          <q-select
+            v-model="selectedPasswordAuthMethod"
+            :options="passwordAuthOptions"
+            label="Authentication Method"
+            outlined
+            filled
+            dark
+            emit-value
+            map-options
+          />
+
           <q-input
             v-model="credentials.username"
             label="Username"
@@ -35,7 +46,7 @@
           <q-btn
             type="submit"
             color="primary"
-            label="Login"
+            :label="submitLabel"
             class="full-width"
             :loading="isLoading"
             :disable="isLoading"
@@ -73,7 +84,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import axios from 'axios';
@@ -90,6 +101,17 @@ const credentials = ref({
 const isLoading = ref(false);
 const errorMessage = ref('');
 const ssoEnabled = ref(false);
+const ldapEnabled = ref(false);
+const ldapDisplayName = ref('Central Authentication');
+const selectedPasswordAuthMethod = ref('local');
+const passwordAuthOptions = ref([
+  { label: 'Local Authentication', value: 'local' },
+  { label: 'Central Authentication', value: 'ldap', disable: true }
+]);
+
+const submitLabel = computed(() => (
+  selectedPasswordAuthMethod.value === 'ldap' ? 'Log in with Central Authentication' : 'Log in with Local Authentication'
+));
 
 // Check if SSO is enabled
 const checkSSOConfig = async () => {
@@ -99,6 +121,13 @@ const checkSSOConfig = async () => {
     });
     const response = await api.get('/auth/config/');
     ssoEnabled.value = response.data.sso_enabled;
+    ldapEnabled.value = response.data.ldap_enabled;
+    ldapDisplayName.value = response.data.ldap_display_name || 'Central Authentication';
+    passwordAuthOptions.value = [
+      { label: 'Local Authentication', value: 'local' },
+      { label: ldapDisplayName.value, value: 'ldap', disable: !ldapEnabled.value }
+    ];
+    selectedPasswordAuthMethod.value = response.data.default_password_auth_method || 'local';
   } catch (error) {
     console.error('Error fetching auth config:', error);
   }
@@ -113,7 +142,8 @@ const handleLogin = async () => {
       baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
     });
 
-    const response = await api.post('/auth/login/', {
+    const endpoint = selectedPasswordAuthMethod.value === 'ldap' ? '/auth/ldap/login/' : '/auth/login/';
+    const response = await api.post(endpoint, {
       username: credentials.value.username,
       password: credentials.value.password
     });
@@ -157,20 +187,11 @@ onMounted(async () => {
   const token = route.query.token;
   if (token) {
     try {
-      const api = axios.create({
-        baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:8000/api',
-        headers: {
-          Authorization: `Token ${token}`
-        }
-      });
-      
-      // Fetch user info with the token
-      // This assumes the backend stores user info in the session or we need to fetch it
       authStore.setToken(token);
       
       // For SSO, we'll redirect and let the app fetch user info
       router.push('/devices');
-    } catch (error) {
+    } catch {
       errorMessage.value = 'SSO login failed. Please try again.';
     }
   }
