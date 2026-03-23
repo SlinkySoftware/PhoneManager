@@ -164,6 +164,21 @@ DJANGO_DB_USER=phonemanager
 DJANGO_DB_PASSWORD=change-this-db-password
 DJANGO_DB_HOST=127.0.0.1
 DJANGO_DB_PORT=5432
+LDAP_ENABLED=False
+LDAP_DISPLAY_NAME=Central Authentication
+LDAP_SERVER_NAME=
+LDAP_PORT=389
+LDAP_ENCRYPTION=none
+LDAP_VALIDATE_CERTIFICATES=True
+LDAP_BIND_DN=
+LDAP_BIND_PASSWORD=
+LDAP_DOMAIN_NAME=
+LDAP_USERNAME_FORMAT=%u
+LDAP_GROUP_ATTRIBUTE=memberOf
+LDAP_ADMIN_GROUP_MAPPING=
+LDAP_USER_GROUP_MAPPING=
+LDAP_BASE_DN=
+LDAP_SEARCH_FILTER='(|(userPrincipalName=%u)(sAMAccountName=%r)(uid=%r)(cn=%r))'
 EOF
     chmod 640 "$ENV_FILE"
     chown root:"$APP_GROUP" "$ENV_FILE"
@@ -171,9 +186,46 @@ EOF
     log "Existing backend env file detected, leaving unchanged"
   fi
 
+  ensure_ldap_env_keys
+
   if [[ ! -f "$BACKEND_DIR/.env" ]]; then
     ln -s "$ENV_FILE" "$BACKEND_DIR/.env"
     chown -h "$APP_USER:$APP_GROUP" "$BACKEND_DIR/.env"
+  fi
+}
+
+ensure_ldap_env_keys() {
+  local missing=0
+
+  append_if_missing() {
+    local key="$1"
+    local value="$2"
+    if ! grep -q "^${key}=" "$ENV_FILE"; then
+      echo "${key}=${value}" >> "$ENV_FILE"
+      missing=1
+      log "Added missing LDAP env key: $key"
+    fi
+  }
+
+  append_if_missing "LDAP_ENABLED" "False"
+  append_if_missing "LDAP_DISPLAY_NAME" "Central Authentication"
+  append_if_missing "LDAP_SERVER_NAME" ""
+  append_if_missing "LDAP_PORT" "389"
+  append_if_missing "LDAP_ENCRYPTION" "none"
+  append_if_missing "LDAP_VALIDATE_CERTIFICATES" "True"
+  append_if_missing "LDAP_BIND_DN" ""
+  append_if_missing "LDAP_BIND_PASSWORD" ""
+  append_if_missing "LDAP_DOMAIN_NAME" ""
+  append_if_missing "LDAP_USERNAME_FORMAT" "%u"
+  append_if_missing "LDAP_GROUP_ATTRIBUTE" "memberOf"
+  append_if_missing "LDAP_ADMIN_GROUP_MAPPING" ""
+  append_if_missing "LDAP_USER_GROUP_MAPPING" ""
+  append_if_missing "LDAP_BASE_DN" ""
+  append_if_missing "LDAP_SEARCH_FILTER" "'(|(userPrincipalName=%u)(sAMAccountName=%r)(uid=%r)(cn=%r))'"
+
+  if [[ "$missing" -eq 1 ]]; then
+    chmod 640 "$ENV_FILE"
+    chown root:"$APP_GROUP" "$ENV_FILE"
   fi
 }
 
