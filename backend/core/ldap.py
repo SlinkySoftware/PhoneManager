@@ -68,12 +68,12 @@ class LDAPAuthHandler:
             formatted_username = self._format_username(username)
             user_record = self._lookup_user(service_connection, username, formatted_username)
             groups = user_record["groups"]
+            user_dn = user_record["dn"]
+
+            self._bind_as_user(server, user_dn, password)
 
             if not self._has_required_group(groups):
-                raise LDAPAuthenticationError("Access denied: Required LDAP group membership not found")
-
-            user_dn = user_record["dn"]
-            self._bind_as_user(server, user_dn, password)
+                raise LDAPAuthenticationError("You are not authorised to access this application")
 
             role = self._determine_role(groups)
             user, profile = self._provision_user(username, user_record["attributes"], role)
@@ -217,7 +217,7 @@ class LDAPAuthHandler:
                 connection.start_tls()
             connection.unbind()
         except LDAPBindError as exc:
-            raise LDAPAuthenticationError("Invalid username or password") from exc
+            raise LDAPAuthenticationError("Password Incorrect") from exc
         except LDAPException as exc:
             logger.exception("LDAP user bind failed for %s: %s", user_dn, exc)
             raise LDAPAuthenticationError("LDAP authentication failed") from exc
@@ -352,3 +352,4 @@ class LDAPAuthHandler:
             return int(value)
         except (TypeError, ValueError):
             return default
+        
