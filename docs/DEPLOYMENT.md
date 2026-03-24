@@ -101,12 +101,23 @@ VITE_API_BASE=http://localhost:8000   # Frontend API base URL
 
 ### Automated RHEL Install (Recommended)
 
-For RHEL-based production hosts, use the installation script:
+For RHEL-based production hosts, use the stage 1 installation bootstrap. This script is designed to be downloaded directly and run on a fresh host.
+
+Example using `wget` and `bash`:
 
 ```bash
-cd /opt/phonemanager
-sudo ./scripts/install-rhel-baremetal.sh
+wget -qO- https://raw.githubusercontent.com/SlinkySoftware/PhoneManager/master/scripts/install-rhel-baremetal.sh | sudo bash
 ```
+
+Or, if you prefer to keep a local copy first:
+
+```bash
+wget https://raw.githubusercontent.com/SlinkySoftware/PhoneManager/master/scripts/install-rhel-baremetal.sh
+chmod +x install-rhel-baremetal.sh
+sudo ./install-rhel-baremetal.sh
+```
+
+By default the bootstrap installer clones the repository to `/opt/phonemanager`. Override this by setting `APP_DIR` before invoking the script.
 
 What it configures:
 
@@ -119,7 +130,31 @@ What it configures:
     - proxy Django WSGI endpoints (`/api/`, `/admin/`, `/provision/`) to Gunicorn
     - serve frontend SPA from `frontend/dist/spa`
 
+How it works:
+
+- Stage 1 installs `git` if required
+- Stage 1 clones `https://github.com/SlinkySoftware/PhoneManager` into `/opt/phonemanager`
+- Stage 1 then executes `scripts/install-rhel-baremetal-stage2.sh` from the cloned checkout
+- Stage 2 performs the full application install and service setup
+
 After first run, edit `/etc/phonemanager/backend.env` with production DB credentials and restart the backend service.
+
+### Automated RHEL Upgrade
+
+For subsequent upgrades on RHEL-based production hosts, use the upgrade launcher:
+
+```bash
+cd /opt/phonemanager
+sudo ./scripts/upgrade-rhel-baremetal.sh
+```
+
+How it works:
+
+- Stage 1 refreshes the git checkout with `git fetch` and `git pull --ff-only`
+- Stage 1 then executes `scripts/upgrade-rhel-baremetal-stage2.sh` from the updated checkout
+- Stage 2 upgrades dependencies, runs migrations, rebuilds the frontend, rewrites nginx, and restarts services
+
+This avoids the previous issue where the upgrade script itself changed during `git pull` and required a second manual run.
 
 ### Prerequisites
 
