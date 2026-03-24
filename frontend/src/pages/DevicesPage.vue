@@ -672,6 +672,14 @@ const columns = [
     align: 'left',
     sortable: true
   },
+  {
+    name: 'last_requested_ip_address',
+    label: 'Last Requested IP',
+    field: 'last_requested_ip_address',
+    format: val => val || 'Unknown',
+    align: 'left',
+    sortable: true
+  },
   { name: 'actions', label: 'Actions', field: 'actions', align: 'right' }
 ];
 

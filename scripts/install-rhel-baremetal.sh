@@ -285,27 +285,33 @@ server {
     # Django API endpoints
     location /api/ {
         proxy_pass http://phonemanager_backend;
-        proxy_set_header Host localhost;
+      proxy_set_header Host localhost;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     # Provisioning endpoints for phones
     location /provision/ {
         proxy_pass http://phonemanager_backend;
-        proxy_set_header Host localhost;
+      proxy_set_header Host localhost;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     # Django admin endpoints
     location /admin/ {
         proxy_pass http://phonemanager_backend;
-        proxy_set_header Host localhost;
+      proxy_set_header Host localhost;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 

@@ -284,9 +284,11 @@ server {
     # API endpoints (backend)
     location /api/ {
         proxy_pass http://backend;
-        proxy_set_header Host $host;
+        proxy_set_header Host localhost;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_redirect off;
         
@@ -299,9 +301,11 @@ server {
     # Provisioning endpoints
     location /provision/ {
         proxy_pass http://backend;
-        proxy_set_header Host $host;
+        proxy_set_header Host localhost;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
         proxy_set_header X-Forwarded-Proto $scheme;
         
         # No auth required for provisioning
@@ -311,9 +315,11 @@ server {
     # Admin panel
     location /admin/ {
         proxy_pass http://backend;
-        proxy_set_header Host $host;
+        proxy_set_header Host localhost;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
@@ -423,9 +429,11 @@ Add to nginx config under `location /api/`:
     # SAML endpoints
     location /api/auth/saml/ {
         proxy_pass http://backend;
-        proxy_set_header Host $host;
+        proxy_set_header Host localhost;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 ```

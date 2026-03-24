@@ -346,6 +346,11 @@ class Device(models.Model):
     device_specific_configuration = models.JSONField(default=dict, blank=True)
     enabled = models.BooleanField(default=True)
     last_provisioned_at = models.DateTimeField(null=True, blank=True, help_text="Last time device configuration was requested")
+    last_requested_ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="Last resolved client IP address that requested device configuration",
+    )
 
     class Meta:
         ordering = ["mac_address"]

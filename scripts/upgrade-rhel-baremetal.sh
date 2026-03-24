@@ -11,6 +11,7 @@ BACKEND_DIR="$APP_DIR/backend"
 FRONTEND_DIR="$APP_DIR/frontend"
 ENV_FILE="${ENV_FILE:-/etc/phonemanager/backend.env}"
 GUNICORN_SERVICE="${GUNICORN_SERVICE:-phonemanager-gunicorn.service}"
+NGINX_CONF="${NGINX_CONF:-/etc/nginx/conf.d/phonemanager.conf}"
 
 log() {
   echo "[upgrade-rhel] $*"
@@ -138,6 +139,75 @@ build_frontend() {
   fi
 }
 
+write_nginx_config() {
+  log "Writing Nginx configuration: $NGINX_CONF"
+  cat > "$NGINX_CONF" <<EOF
+upstream phonemanager_backend {
+    server 127.0.0.1:8000;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    client_max_body_size 20m;
+
+    root $FRONTEND_DIR/dist/spa;
+    index index.html;
+
+    # Frontend SPA routes
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    # Django API endpoints
+    location /api/ {
+        proxy_pass http://phonemanager_backend;
+      proxy_set_header Host localhost;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # Provisioning endpoints for phones
+    location /provision/ {
+        proxy_pass http://phonemanager_backend;
+      proxy_set_header Host localhost;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # Django admin endpoints
+    location /admin/ {
+        proxy_pass http://phonemanager_backend;
+      proxy_set_header Host localhost;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    access_log /var/log/nginx/phonemanager_access.log;
+    error_log /var/log/nginx/phonemanager_error.log;
+}
+EOF
+
+  chmod 644 "$NGINX_CONF"
+}
+
+reload_nginx() {
+  log "Validating Nginx configuration"
+  nginx -t
+  systemctl enable --now nginx
+  systemctl restart nginx
+}
+
 restart_gunicorn() {
   log "Restarting Gunicorn service: $GUNICORN_SERVICE"
   systemctl restart "$GUNICORN_SERVICE"
@@ -154,15 +224,17 @@ restart_gunicorn() {
 main() {
   require_root
   validate_paths
-  ensure_ldap_env_keys
 
   log "Starting application upgrade"
   update_source_code
+  ensure_ldap_env_keys
   ensure_ownership
   upgrade_backend_dependencies
   upgrade_frontend_dependencies
   run_migrations
   build_frontend
+  write_nginx_config
+  reload_nginx
   restart_gunicorn
 
   cat <<EOF
@@ -176,7 +248,8 @@ Executed steps:
 4. Updated Node.js packages from frontend/package-lock.json/package.json
 5. Ran Django migrations
 6. Rebuilt Quasar frontend
-7. Restarted $GUNICORN_SERVICE
+7. Rewrote and reloaded nginx configuration
+8. Restarted $GUNICORN_SERVICE
 
 EOF
 }

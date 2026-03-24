@@ -155,6 +155,7 @@ class DeviceSerializer(serializers.ModelSerializer):
             "device_specific_configuration",
             "enabled",
             "last_provisioned_at",
+            "last_requested_ip_address",
             "line_directory_numbers",
         ]
 

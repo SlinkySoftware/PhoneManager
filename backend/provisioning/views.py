@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Slinky Software
 
 """Provisioning-facing views and device type API endpoints."""
+import ipaddress
 import logging
 import re
 from typing import Any, Dict
@@ -18,6 +19,73 @@ from .registry import get_device_type, list_device_types
 
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_ip_candidate(value: str | None) -> str | None:
+    """Normalize a forwarded IP token into a bare IPv4 or IPv6 string."""
+    if not value:
+        return None
+
+    candidate = value.strip().strip('"')
+    if not candidate or candidate.lower() == "unknown":
+        return None
+
+    if candidate.startswith("for="):
+        candidate = candidate[4:].strip().strip('"')
+
+    if candidate.startswith("[") and "]" in candidate:
+        candidate = candidate[1:candidate.index("]")]
+    elif candidate.count(":") == 1 and "." in candidate:
+        candidate = candidate.split(":", 1)[0]
+
+    if "%" in candidate:
+        candidate = candidate.split("%", 1)[0]
+
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return None
+
+
+def _extract_forwarded_header_ips(header_value: str | None) -> list[str]:
+    """Extract RFC 7239 Forwarded header values in client-to-proxy order."""
+    if not header_value:
+        return []
+
+    results = []
+    for segment in header_value.split(","):
+        for part in segment.split(";"):
+            key, separator, value = part.partition("=")
+            if separator != "=" or key.strip().lower() != "for":
+                continue
+            normalized = _normalize_ip_candidate(value)
+            if normalized:
+                results.append(normalized)
+    return results
+
+
+def get_client_ip_address(request) -> str | None:
+    """Resolve the originating client IP from forwarded headers and socket metadata."""
+    candidates = []
+    seen = set()
+
+    def add_candidate(value: str | None):
+        normalized = _normalize_ip_candidate(value)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            candidates.append(normalized)
+
+    for value in _extract_forwarded_header_ips(request.headers.get("Forwarded")):
+        add_candidate(value)
+
+    x_forwarded_for = request.headers.get("X-Forwarded-For", "")
+    for value in x_forwarded_for.split(","):
+        add_candidate(value)
+
+    add_candidate(request.headers.get("X-Real-IP"))
+    add_candidate(request.META.get("REMOTE_ADDR"))
+
+    return candidates[0] if candidates else None
 
 
 class DeviceTypeSerializer(serializers.Serializer):
@@ -119,9 +187,10 @@ class ProvisioningViewSet(viewsets.ViewSet):
             UserAgentPatterns=device_type_cls.UserAgentPatterns,
         )
         config_text = renderer.render(decrypted_device)
-        
-        # Update last provisioned timestamp
+
+        # Update last provisioned metadata for the device request.
         device.last_provisioned_at = timezone.now()
-        device.save(update_fields=['last_provisioned_at'])
+        device.last_requested_ip_address = get_client_ip_address(request)
+        device.save(update_fields=['last_provisioned_at', 'last_requested_ip_address'])
         
         return HttpResponse(config_text, content_type=renderer.ContentType)
