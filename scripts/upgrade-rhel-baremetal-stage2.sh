@@ -67,7 +67,7 @@ ensure_ldap_env_keys() {
   }
 
   append_if_missing "LDAP_ENABLED" "False"
-  append_if_missing "LDAP_DISPLAY_NAME" "Central Authentication"
+  append_if_missing "LDAP_DISPLAY_NAME" "\"Central Authentication\""
   append_if_missing "LDAP_SERVER_NAME" ""
   append_if_missing "LDAP_PORT" "389"
   append_if_missing "LDAP_ENCRYPTION" "none"

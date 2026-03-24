@@ -150,7 +150,7 @@ DJANGO_DB_PASSWORD=change-this-db-password
 DJANGO_DB_HOST=127.0.0.1
 DJANGO_DB_PORT=5432
 LDAP_ENABLED=False
-LDAP_DISPLAY_NAME=Central Authentication
+LDAP_DISPLAY_NAME="Central Authentication"
 LDAP_SERVER_NAME=
 LDAP_PORT=389
 LDAP_ENCRYPTION=none
@@ -193,7 +193,7 @@ ensure_ldap_env_keys() {
   }
 
   append_if_missing "LDAP_ENABLED" "False"
-  append_if_missing "LDAP_DISPLAY_NAME" "Central Authentication"
+  append_if_missing "LDAP_DISPLAY_NAME" "\"Central Authentication\""
   append_if_missing "LDAP_SERVER_NAME" ""
   append_if_missing "LDAP_PORT" "389"
   append_if_missing "LDAP_ENCRYPTION" "none"
