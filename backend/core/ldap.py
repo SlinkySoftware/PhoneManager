@@ -14,8 +14,11 @@ from __future__ import annotations
 
 import logging
 import ssl
+import json
 from dataclasses import dataclass
 from typing import Any
+
+import yaml
 
 from django.contrib.auth.models import User
 from ldap3 import ALL, SUBTREE, Connection, Server, Tls
@@ -392,10 +395,37 @@ class LDAPAuthHandler:
     def _normalize_mapping(self, value: Any) -> list[str]:
         """Normalize configured group mapping values into a list of strings."""
         if isinstance(value, list):
-            return [str(item).strip() for item in value if str(item).strip()]
+            return self._clean_mapping_items(value)
         if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
+            text = value.strip()
+            if not text:
+                return []
+
+            parsed = self._parse_mapping_sequence(text)
+            if parsed is not None:
+                return parsed
+
+            return [item.strip() for item in text.split(",") if item.strip()]
         return []
+
+    def _parse_mapping_sequence(self, value: str) -> list[str] | None:
+        """Parse JSON/YAML list syntax from a string value when present."""
+        if not value.startswith("["):
+            return None
+
+        for parser in (json.loads, yaml.safe_load):
+            try:
+                parsed = parser(value)
+            except (TypeError, ValueError, yaml.YAMLError):
+                continue
+            if isinstance(parsed, list):
+                return self._clean_mapping_items(parsed)
+
+        return None
+
+    def _clean_mapping_items(self, values: list[Any]) -> list[str]:
+        """Strip whitespace and drop empty mapping entries."""
+        return [str(item).strip() for item in values if str(item).strip()]
 
     def _to_bool(self, value: Any) -> bool:
         """Normalize bool-like config values."""
