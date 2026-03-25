@@ -13,6 +13,12 @@ ENV_DIR="/etc/phonemanager"
 ENV_FILE="$ENV_DIR/backend.env"
 NGINX_CONF="/etc/nginx/conf.d/phonemanager.conf"
 SYSTEMD_SERVICE="/etc/systemd/system/phonemanager-gunicorn.service"
+LOGROTATE_CONF="/etc/logrotate.d/phonemanager"
+LOG_DIR_WAS_PROVIDED=0
+if [[ -n "${LOG_DIR+x}" ]]; then
+  LOG_DIR_WAS_PROVIDED=1
+fi
+LOG_DIR="${LOG_DIR:-/var/log/phonemanager}"
 PYTHON_BIN=""
 
 log() {
@@ -39,6 +45,30 @@ validate_paths() {
 
   if [[ ! -d "$FRONTEND_DIR" || ! -f "$FRONTEND_DIR/package.json" ]]; then
     echo "Frontend directory not found: $FRONTEND_DIR"
+    exit 1
+  fi
+}
+
+load_log_dir_from_env_file() {
+  if [[ "$LOG_DIR_WAS_PROVIDED" -eq 1 || ! -f "$ENV_FILE" ]]; then
+    return
+  fi
+
+  local env_log_dir
+  env_log_dir="$(sed -n 's/^LOG_DIR=//p' "$ENV_FILE" | tail -n 1)"
+  env_log_dir="${env_log_dir#\"}"
+  env_log_dir="${env_log_dir%\"}"
+  env_log_dir="${env_log_dir#\'}"
+  env_log_dir="${env_log_dir%\'}"
+
+  if [[ -n "$env_log_dir" ]]; then
+    LOG_DIR="$env_log_dir"
+  fi
+}
+
+validate_log_dir() {
+  if [[ "$LOG_DIR" != /* ]]; then
+    echo "LOG_DIR must be an absolute path: $LOG_DIR"
     exit 1
   fi
 }
@@ -102,6 +132,31 @@ ensure_app_ownership() {
   chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
 }
 
+ensure_log_dir() {
+  log "Ensuring application log directory exists: $LOG_DIR"
+  mkdir -p "$LOG_DIR"
+  chown root:"$APP_GROUP" "$LOG_DIR"
+  chmod 2775 "$LOG_DIR"
+
+  touch \
+    "$LOG_DIR/application.log" \
+    "$LOG_DIR/gunicorn-access.log" \
+    "$LOG_DIR/nginx-access.log" \
+    "$LOG_DIR/nginx-error.log"
+
+  chown root:"$APP_GROUP" \
+    "$LOG_DIR/application.log" \
+    "$LOG_DIR/gunicorn-access.log" \
+    "$LOG_DIR/nginx-access.log" \
+    "$LOG_DIR/nginx-error.log"
+
+  chmod 664 \
+    "$LOG_DIR/application.log" \
+    "$LOG_DIR/gunicorn-access.log" \
+    "$LOG_DIR/nginx-access.log" \
+    "$LOG_DIR/nginx-error.log"
+}
+
 setup_backend_venv() {
   log "Creating backend virtual environment"
   run_as_app_user "$PYTHON_BIN -m venv '$BACKEND_DIR/.venv'"
@@ -139,7 +194,7 @@ write_backend_env() {
   chown root:"$APP_GROUP" "$ENV_DIR"
 
   if [[ ! -f "$ENV_FILE" ]]; then
-    cat > "$ENV_FILE" <<'EOF'
+    cat > "$ENV_FILE" <<EOF
 DJANGO_SECRET_KEY=change-this-to-a-strong-random-secret
 DJANGO_DEBUG=False
 DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
@@ -149,6 +204,7 @@ DJANGO_DB_USER=phonemanager
 DJANGO_DB_PASSWORD=change-this-db-password
 DJANGO_DB_HOST=127.0.0.1
 DJANGO_DB_PORT=5432
+LOG_DIR=$LOG_DIR
 LDAP_ENABLED=False
 LDAP_DISPLAY_NAME="Central Authentication"
 LDAP_SERVER_NAME=
@@ -171,12 +227,31 @@ EOF
     log "Existing backend env file detected, leaving unchanged"
   fi
 
+  ensure_log_dir_env_key
   ensure_ldap_env_keys
 
   if [[ ! -f "$BACKEND_DIR/.env" ]]; then
     ln -s "$ENV_FILE" "$BACKEND_DIR/.env"
     chown -h "$APP_USER:$APP_GROUP" "$BACKEND_DIR/.env"
   fi
+}
+
+ensure_log_dir_env_key() {
+  local escaped_log_dir
+  escaped_log_dir="$(printf '%s' "$LOG_DIR" | sed 's/[&|]/\\&/g')"
+
+  if grep -q '^LOG_DIR=' "$ENV_FILE"; then
+    if [[ "$LOG_DIR_WAS_PROVIDED" -eq 1 ]]; then
+      sed -i "s|^LOG_DIR=.*$|LOG_DIR=$escaped_log_dir|" "$ENV_FILE"
+      log "Updated LOG_DIR env key: $LOG_DIR"
+    fi
+  else
+    echo "LOG_DIR=$LOG_DIR" >> "$ENV_FILE"
+    log "Added missing LOG_DIR env key"
+  fi
+
+  chmod 640 "$ENV_FILE"
+  chown root:"$APP_GROUP" "$ENV_FILE"
 }
 
 ensure_ldap_env_keys() {
@@ -228,6 +303,9 @@ User=$APP_USER
 Group=$APP_GROUP
 WorkingDirectory=$BACKEND_DIR
 EnvironmentFile=$ENV_FILE
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:$LOG_DIR/application.log
+StandardError=append:$LOG_DIR/application.log
 ExecStart=$BACKEND_DIR/.venv/bin/gunicorn \
   --workers 4 \
   --worker-class sync \
@@ -235,6 +313,10 @@ ExecStart=$BACKEND_DIR/.venv/bin/gunicorn \
   --max-requests-jitter 100 \
   --timeout 60 \
   --bind 127.0.0.1:8000 \
+  --access-logfile $LOG_DIR/gunicorn-access.log \
+  --access-logformat '%({x-forwarded-for}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"' \
+  --capture-output \
+  --log-level info \
   phone_manager.wsgi:application
 Restart=always
 RestartSec=5
@@ -300,12 +382,32 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    access_log /var/log/nginx/phonemanager_access.log;
-    error_log /var/log/nginx/phonemanager_error.log;
+  access_log $LOG_DIR/nginx-access.log;
+  error_log $LOG_DIR/nginx-error.log;
 }
 EOF
 
   chmod 644 "$NGINX_CONF"
+}
+
+write_logrotate_config() {
+  log "Writing logrotate configuration: $LOGROTATE_CONF"
+  cat > "$LOGROTATE_CONF" <<EOF
+$LOG_DIR/application.log $LOG_DIR/gunicorn-access.log $LOG_DIR/nginx-access.log $LOG_DIR/nginx-error.log {
+    daily
+    rotate 13
+    dateext
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    su root $APP_GROUP
+    create 0640 root $APP_GROUP
+}
+EOF
+
+  chmod 644 "$LOGROTATE_CONF"
 }
 
 reload_services() {
@@ -337,10 +439,14 @@ main() {
   ensure_app_ownership
   setup_backend_venv
   write_backend_env
+  load_log_dir_from_env_file
+  validate_log_dir
+  ensure_log_dir
   run_migrations
   setup_frontend
   write_systemd_service
   write_nginx_config
+  write_logrotate_config
   reload_services
 
   cat <<EOF

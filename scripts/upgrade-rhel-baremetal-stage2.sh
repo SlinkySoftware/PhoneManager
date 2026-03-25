@@ -11,7 +11,14 @@ BACKEND_DIR="$APP_DIR/backend"
 FRONTEND_DIR="$APP_DIR/frontend"
 ENV_FILE="${ENV_FILE:-/etc/phonemanager/backend.env}"
 GUNICORN_SERVICE="${GUNICORN_SERVICE:-phonemanager-gunicorn.service}"
+SYSTEMD_SERVICE_PATH="${SYSTEMD_SERVICE_PATH:-/etc/systemd/system/${GUNICORN_SERVICE}}"
 NGINX_CONF="${NGINX_CONF:-/etc/nginx/conf.d/phonemanager.conf}"
+LOGROTATE_CONF="${LOGROTATE_CONF:-/etc/logrotate.d/phonemanager}"
+LOG_DIR_WAS_PROVIDED=0
+if [[ -n "${LOG_DIR+x}" ]]; then
+  LOG_DIR_WAS_PROVIDED=1
+fi
+LOG_DIR="${LOG_DIR:-/var/log/phonemanager}"
 
 log() {
   echo "[upgrade-rhel] $*"
@@ -51,6 +58,48 @@ validate_paths() {
     echo "Set ENV_FILE or run scripts/install-rhel-baremetal.sh first."
     exit 1
   fi
+}
+
+load_log_dir_from_env_file() {
+  if [[ "$LOG_DIR_WAS_PROVIDED" -eq 1 || ! -f "$ENV_FILE" ]]; then
+    return
+  fi
+
+  local env_log_dir
+  env_log_dir="$(sed -n 's/^LOG_DIR=//p' "$ENV_FILE" | tail -n 1)"
+  env_log_dir="${env_log_dir#\"}"
+  env_log_dir="${env_log_dir%\"}"
+  env_log_dir="${env_log_dir#\'}"
+  env_log_dir="${env_log_dir%\'}"
+
+  if [[ -n "$env_log_dir" ]]; then
+    LOG_DIR="$env_log_dir"
+  fi
+}
+
+validate_log_dir() {
+  if [[ "$LOG_DIR" != /* ]]; then
+    echo "LOG_DIR must be an absolute path: $LOG_DIR"
+    exit 1
+  fi
+}
+
+ensure_log_dir_env_key() {
+  local escaped_log_dir
+  escaped_log_dir="$(printf '%s' "$LOG_DIR" | sed 's/[&|]/\\&/g')"
+
+  if grep -q '^LOG_DIR=' "$ENV_FILE"; then
+    if [[ "$LOG_DIR_WAS_PROVIDED" -eq 1 ]]; then
+      sed -i "s|^LOG_DIR=.*$|LOG_DIR=$escaped_log_dir|" "$ENV_FILE"
+      log "Updated LOG_DIR env key: $LOG_DIR"
+    fi
+  else
+    echo "LOG_DIR=$LOG_DIR" >> "$ENV_FILE"
+    log "Added missing LOG_DIR env key"
+  fi
+
+  chmod 640 "$ENV_FILE"
+  chown root:"$APP_GROUP" "$ENV_FILE"
 }
 
 ensure_ldap_env_keys() {
@@ -93,6 +142,31 @@ ensure_ownership() {
   chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
 }
 
+ensure_log_dir() {
+  log "Ensuring application log directory exists: $LOG_DIR"
+  mkdir -p "$LOG_DIR"
+  chown root:"$APP_GROUP" "$LOG_DIR"
+  chmod 2775 "$LOG_DIR"
+
+  touch \
+    "$LOG_DIR/application.log" \
+    "$LOG_DIR/gunicorn-access.log" \
+    "$LOG_DIR/nginx-access.log" \
+    "$LOG_DIR/nginx-error.log"
+
+  chown root:"$APP_GROUP" \
+    "$LOG_DIR/application.log" \
+    "$LOG_DIR/gunicorn-access.log" \
+    "$LOG_DIR/nginx-access.log" \
+    "$LOG_DIR/nginx-error.log"
+
+  chmod 664 \
+    "$LOG_DIR/application.log" \
+    "$LOG_DIR/gunicorn-access.log" \
+    "$LOG_DIR/nginx-access.log" \
+    "$LOG_DIR/nginx-error.log"
+}
+
 upgrade_backend_dependencies() {
   log "Upgrading backend Python tooling"
   run_as_app_user "'$BACKEND_DIR/.venv/bin/pip' install --upgrade pip wheel setuptools"
@@ -123,6 +197,45 @@ build_frontend() {
     echo "Quasar build output not found at $FRONTEND_DIR/dist/spa"
     exit 1
   fi
+}
+
+write_systemd_service() {
+  log "Writing systemd gunicorn service: $SYSTEMD_SERVICE_PATH"
+  cat > "$SYSTEMD_SERVICE_PATH" <<EOF
+[Unit]
+Description=Phone Manager Django Gunicorn Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$APP_USER
+Group=$APP_GROUP
+WorkingDirectory=$BACKEND_DIR
+EnvironmentFile=$ENV_FILE
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:$LOG_DIR/application.log
+StandardError=append:$LOG_DIR/application.log
+ExecStart=$BACKEND_DIR/.venv/bin/gunicorn \
+  --workers 4 \
+  --worker-class sync \
+  --max-requests 1000 \
+  --max-requests-jitter 100 \
+  --timeout 60 \
+  --bind 127.0.0.1:8000 \
+  --access-logfile $LOG_DIR/gunicorn-access.log \
+  --access-logformat '%({x-forwarded-for}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"' \
+  --capture-output \
+  --log-level info \
+  phone_manager.wsgi:application
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  chmod 644 "$SYSTEMD_SERVICE_PATH"
 }
 
 write_nginx_config() {
@@ -179,12 +292,32 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    access_log /var/log/nginx/phonemanager_access.log;
-    error_log /var/log/nginx/phonemanager_error.log;
+  access_log $LOG_DIR/nginx-access.log;
+  error_log $LOG_DIR/nginx-error.log;
 }
 EOF
 
   chmod 644 "$NGINX_CONF"
+}
+
+write_logrotate_config() {
+  log "Writing logrotate configuration: $LOGROTATE_CONF"
+  cat > "$LOGROTATE_CONF" <<EOF
+$LOG_DIR/application.log $LOG_DIR/gunicorn-access.log $LOG_DIR/nginx-access.log $LOG_DIR/nginx-error.log {
+    daily
+    rotate 13
+    dateext
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    su root $APP_GROUP
+    create 0640 root $APP_GROUP
+}
+EOF
+
+  chmod 644 "$LOGROTATE_CONF"
 }
 
 reload_nginx() {
@@ -192,6 +325,11 @@ reload_nginx() {
   nginx -t
   systemctl enable --now nginx
   systemctl restart nginx
+}
+
+reload_systemd() {
+  log "Reloading systemd configuration"
+  systemctl daemon-reload
 }
 
 restart_gunicorn() {
@@ -212,13 +350,20 @@ main() {
   validate_paths
 
   log "Starting stage 2 upgrade execution"
+  load_log_dir_from_env_file
+  ensure_log_dir_env_key
   ensure_ldap_env_keys
+  validate_log_dir
+  ensure_log_dir
   ensure_ownership
   upgrade_backend_dependencies
   upgrade_frontend_dependencies
   run_migrations
   build_frontend
+  write_systemd_service
   write_nginx_config
+  write_logrotate_config
+  reload_systemd
   reload_nginx
   restart_gunicorn
 
@@ -233,8 +378,10 @@ Executed steps:
 4. Updated Node.js packages from frontend/package-lock.json/package.json
 5. Ran Django migrations
 6. Rebuilt Quasar frontend
-7. Rewrote and reloaded nginx configuration
-8. Restarted $GUNICORN_SERVICE
+7. Rewrote the Gunicorn systemd unit with file logging
+8. Rewrote and reloaded nginx configuration
+9. Wrote logrotate configuration for application logs
+10. Restarted $GUNICORN_SERVICE
 
 EOF
 }

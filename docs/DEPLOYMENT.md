@@ -119,16 +119,29 @@ sudo ./install-rhel-baremetal.sh
 
 By default the bootstrap installer clones the repository to `/opt/phonemanager`. Override this by setting `APP_DIR` before invoking the script.
 
+By default the installer writes application and web logs to `/var/log/phonemanager`. Override this by setting `LOG_DIR` before invoking the script.
+
+Example with a custom log directory:
+
+```bash
+sudo LOG_DIR=/srv/phonemanager/logs ./install-rhel-baremetal.sh
+```
+
 What it configures:
 
 - Installs RHEL dependencies (Python 3.12+, compiler/libs, Node.js/npm, nginx)
 - Creates backend virtual environment and installs Python modules
 - Installs frontend Node modules and builds Quasar (`frontend/dist/spa`)
 - Writes externalized backend env file at `/etc/phonemanager/backend.env`
+- Persists `LOG_DIR` in `/etc/phonemanager/backend.env`
+- Creates application log directory (default `/var/log/phonemanager`)
 - Creates/starts `phonemanager-gunicorn` systemd service
-- Configures nginx to:
-    - proxy Django WSGI endpoints (`/api/`, `/admin/`, `/provision/`) to Gunicorn
-    - serve frontend SPA from `frontend/dist/spa`
+- Configures Gunicorn stdout/stderr to append to `application.log`
+- Configures Gunicorn access logging to `gunicorn-access.log`
+- Configures nginx to proxy Django WSGI endpoints (`/api/`, `/admin/`, `/provision/`) to Gunicorn
+- Configures nginx to serve frontend SPA from `frontend/dist/spa`
+- Configures nginx access/error logs in the same log directory
+- Writes `/etc/logrotate.d/phonemanager` for daily rotation and two-week retention
 
 How it works:
 
@@ -148,13 +161,55 @@ cd /opt/phonemanager
 sudo ./scripts/upgrade-rhel-baremetal.sh
 ```
 
+Example with a custom log directory override during upgrade:
+
+```bash
+cd /opt/phonemanager
+sudo LOG_DIR=/srv/phonemanager/logs ./scripts/upgrade-rhel-baremetal.sh
+```
+
 How it works:
 
 - Stage 1 refreshes the git checkout with `git fetch` and `git pull --ff-only`
 - Stage 1 then executes `scripts/upgrade-rhel-baremetal-stage2.sh` from the updated checkout
-- Stage 2 upgrades dependencies, runs migrations, rebuilds the frontend, rewrites nginx, and restarts services
+- Stage 2 upgrades dependencies, runs migrations, rebuilds the frontend, rewrites the Gunicorn systemd unit, rewrites nginx, refreshes logrotate config, and restarts services
 
 This avoids the previous issue where the upgrade script itself changed during `git pull` and required a second manual run.
+
+### RHEL Installed Logging
+
+The RHEL install and upgrade scripts configure file-based logging by default.
+
+Default log directory:
+
+- `/var/log/phonemanager`
+
+Files created and managed by the scripts:
+
+- `application.log` - Gunicorn stderr/stdout and captured Django console output
+- `gunicorn-access.log` - Gunicorn request access log
+- `nginx-access.log` - nginx access log for the site
+- `nginx-error.log` - nginx error log for the site
+
+The install writes `LOG_DIR` to `/etc/phonemanager/backend.env`. Subsequent upgrades reuse that value unless a new `LOG_DIR` override is provided.
+
+Log rotation:
+
+- Config file: `/etc/logrotate.d/phonemanager`
+- Rotation: daily
+- Retention: 14 days total
+- Expanded logs: current day plus previous rotated day
+- Compressed logs: 12 older rotated days (`delaycompress`)
+
+Useful commands:
+
+```bash
+sudo ls -lah /var/log/phonemanager
+sudo tail -f /var/log/phonemanager/application.log
+sudo tail -f /var/log/phonemanager/gunicorn-access.log
+sudo tail -f /var/log/phonemanager/nginx-access.log
+sudo logrotate -d /etc/logrotate.d/phonemanager
+```
 
 ### Prerequisites
 
@@ -584,7 +639,7 @@ SSO button will disappear from login page, users can only login with local crede
 - [ ] Set ALLOWED_HOSTS to your domain
 - [ ] Enable CSRF protection
 - [ ] Configure CORS to whitelist frontend origin only
-- [ ] Setup log rotation for var/logs/
+- [ ] Confirm `/etc/logrotate.d/phonemanager` is present and rotating `/var/log/phonemanager/*.log`
 - [ ] Regular backups of PostgreSQL database
 - [ ] Keep dependencies updated
 - [ ] Use strong admin password
@@ -597,15 +652,25 @@ SSO button will disappear from login page, users can only login with local crede
 ### Application Health
 
 ```bash
-# Check backend service
+# Check backend service for manual deployments
 sudo systemctl status phonemanager-backend
 
-# Check frontend service
+# Check frontend service for manual deployments
 sudo systemctl status phonemanager-frontend
 
-# View recent errors
+# Check backend service for RHEL scripted installs
+sudo systemctl status phonemanager-gunicorn
+
+# Check nginx service for RHEL scripted installs
+sudo systemctl status nginx
+
+# View recent errors for manual deployments
 sudo journalctl -u phonemanager-backend -n 50
 sudo journalctl -u phonemanager-frontend -n 50
+
+# View recent logs for RHEL scripted installs
+sudo tail -n 50 /var/log/phonemanager/application.log
+sudo tail -n 50 /var/log/phonemanager/nginx-error.log
 
 # Check API health
 curl https://your.domain.com/api/auth/login/
@@ -613,9 +678,11 @@ curl https://your.domain.com/api/auth/login/
 
 ### Log Files
 
-- Backend: `/var/log/journal` (systemd) or `var/logs/backend.log`
-- Frontend: `/var/log/journal` (systemd) or `var/logs/frontend.log`
-- Nginx: `/var/log/nginx/phonemanager_*.log`
+- RHEL scripted install backend/application log: `/var/log/phonemanager/application.log`
+- RHEL scripted install Gunicorn access log: `/var/log/phonemanager/gunicorn-access.log`
+- RHEL scripted install nginx logs: `/var/log/phonemanager/nginx-access.log`, `/var/log/phonemanager/nginx-error.log`
+- Development helper logs: `var/logs/backend.log`, `var/logs/frontend.log`
+- Manual/custom systemd deployments may still log to `journalctl` if configured that way
 
 ### Database Backups
 
@@ -641,6 +708,9 @@ python manage.py dbshell
 
 # Review logs
 sudo journalctl -u phonemanager-backend -n 100
+
+# RHEL scripted install logs
+sudo tail -n 100 /var/log/phonemanager/application.log
 ```
 
 ### Frontend not loading
