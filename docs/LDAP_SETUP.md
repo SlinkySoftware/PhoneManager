@@ -33,6 +33,7 @@ The LDAP configuration is stored in `config.yaml` at the project root:
 ```yaml
 LDAP_ENABLED: true
 LDAP_DISPLAY_NAME: "Central Authentication"
+LDAP_DEBUG_LOGGING: false
 LDAP_SERVER_NAME: "ldap.example.com"
 LDAP_PORT: 636
 LDAP_ENCRYPTION: "ssl"
@@ -56,6 +57,7 @@ LDAP_SEARCH_FILTER: "(|(userPrincipalName=%u)(sAMAccountName=%r)(uid=%r)(cn=%r))
 | --- | --- |
 | `LDAP_ENABLED` | Enables LDAP authentication when `true` |
 | `LDAP_DISPLAY_NAME` | Label used in the login-screen drop-down for central authentication |
+| `LDAP_DEBUG_LOGGING` | Emits step-by-step LDAP diagnostic logs to the application log when `true` |
 | `LDAP_SERVER_NAME` | LDAP server hostname or IP |
 | `LDAP_PORT` | LDAP listener port |
 | `LDAP_ENCRYPTION` | Connection mode: `ssl`, `starttls`, or `none` |
@@ -76,6 +78,7 @@ The application still supports environment variable overrides for operational de
 
 ```bash
 export LDAP_ENABLED=true
+export LDAP_DEBUG_LOGGING=true
 export LDAP_SERVER_NAME="ldap.example.com"
 export LDAP_BIND_PASSWORD="super-secret"
 ```
@@ -201,6 +204,15 @@ Common causes:
 2. `LDAP_SEARCH_FILTER` does not find the user.
 3. The bind account can search the directory, but the user bind fails because the submitted password is wrong.
 
+Enable `LDAP_DEBUG_LOGGING=true` when tracing the LDAP sequence. The application log will then include:
+
+- LDAP connection attempt
+- Service-account bind attempt/result
+- User search request
+- Search result with resolved groups
+- Access-group and admin-group match results
+- User bind attempt/result
+
 ### Access Denied After Successful Directory Lookup
 
 Common causes:
@@ -220,6 +232,8 @@ Common causes:
 Debug logs:
 
 ```bash
-tail -f var/logs/backend.log
-grep -i ldap var/logs/backend.log
+grep LDAP_DEBUG_LOGGING /etc/phonemanager/backend.env
+sudo systemctl restart phonemanager-gunicorn
+tail -f /var/log/phonemanager/application.log
+grep -i ldap /var/log/phonemanager/application.log
 ```

@@ -207,6 +207,7 @@ DJANGO_DB_PORT=5432
 LOG_DIR=$LOG_DIR
 LDAP_ENABLED=False
 LDAP_DISPLAY_NAME="Central Authentication"
+LDAP_DEBUG_LOGGING=False
 LDAP_SERVER_NAME=
 LDAP_PORT=389
 LDAP_ENCRYPTION=none
@@ -269,6 +270,7 @@ ensure_ldap_env_keys() {
 
   append_if_missing "LDAP_ENABLED" "False"
   append_if_missing "LDAP_DISPLAY_NAME" "\"Central Authentication\""
+  append_if_missing "LDAP_DEBUG_LOGGING" "False"
   append_if_missing "LDAP_SERVER_NAME" ""
   append_if_missing "LDAP_PORT" "389"
   append_if_missing "LDAP_ENCRYPTION" "none"

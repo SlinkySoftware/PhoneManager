@@ -93,6 +93,9 @@ class LDAPAuthHandler:
         settings = {
             "enabled": config.get("LDAP_ENABLED", default=False, env_var="LDAP_ENABLED"),
             "display_name": config.get("LDAP_DISPLAY_NAME", default="Central Authentication", env_var="LDAP_DISPLAY_NAME"),
+            "debug_logging": self._to_bool(
+                config.get("LDAP_DEBUG_LOGGING", default=False, env_var="LDAP_DEBUG_LOGGING")
+            ),
             "server": config.get("LDAP_SERVER_NAME", default="", env_var="LDAP_SERVER_NAME"),
             "port": self._to_int(config.get("LDAP_PORT", default=389, env_var="LDAP_PORT"), 389),
             "encryption": str(config.get("LDAP_ENCRYPTION", default="none", env_var="LDAP_ENCRYPTION")).lower(),
@@ -140,6 +143,14 @@ class LDAPAuthHandler:
             validate = ssl.CERT_REQUIRED if self.settings["validate_certificates"] else ssl.CERT_NONE
             tls = Tls(validate=validate)
 
+        self._debug_log(
+            "LDAP connection attempt server=%s port=%s encryption=%s validate_certificates=%s",
+            self.settings["server"],
+            self.settings["port"],
+            self.settings["encryption"],
+            self.settings["validate_certificates"],
+        )
+
         return Server(
             self.settings["server"],
             port=self.settings["port"],
@@ -151,6 +162,7 @@ class LDAPAuthHandler:
     def _bind_service_account(self, server: Server) -> Connection:
         """Bind to LDAP using the configured service account."""
         try:
+            self._debug_log("LDAP bind attempt bind_dn=%s", self.settings["bind_dn"])
             connection = Connection(
                 server,
                 user=self.settings["bind_dn"],
@@ -160,6 +172,7 @@ class LDAPAuthHandler:
             )
             if self.settings["encryption"] == "starttls":
                 connection.start_tls()
+            self._debug_log("LDAP bind succeeded bind_dn=%s", self.settings["bind_dn"])
             return connection
         except LDAPException as exc:
             logger.exception("LDAP service account bind failed: %s", exc)
@@ -175,12 +188,27 @@ class LDAPAuthHandler:
             self.ATTRIBUTE_LAST_NAME,
             self.settings["group_attribute"],
         ]
+        self._debug_log(
+            "LDAP search request username=%s formatted_username=%s base_dn=%s filter=%s attributes=%s",
+            username,
+            formatted_username,
+            self.settings["base_dn"],
+            search_filter,
+            attributes,
+        )
         connection.search(
             search_base=self.settings["base_dn"],
             search_filter=search_filter,
             search_scope=SUBTREE,
             attributes=attributes,
             size_limit=2,
+        )
+
+        self._debug_log(
+            "LDAP search result username=%s entry_count=%s entry_dns=%s",
+            username,
+            len(connection.entries),
+            [entry.entry_dn for entry in connection.entries],
         )
 
         if not connection.entries:
@@ -196,16 +224,25 @@ class LDAPAuthHandler:
             self.ATTRIBUTE_FIRST_NAME: self._first_value(entry, self.ATTRIBUTE_FIRST_NAME),
             self.ATTRIBUTE_LAST_NAME: self._first_value(entry, self.ATTRIBUTE_LAST_NAME),
         }
+        groups = [str(value) for value in raw_groups if value]
+
+        self._debug_log(
+            "LDAP search result user_dn=%s groups=%s attributes=%s",
+            entry.entry_dn,
+            groups,
+            normalized_attributes,
+        )
 
         return {
             "dn": entry.entry_dn,
-            "groups": [str(value) for value in raw_groups if value],
+            "groups": groups,
             "attributes": normalized_attributes,
         }
 
     def _bind_as_user(self, server: Server, user_dn: str, password: str) -> None:
         """Bind as the resolved user to validate the submitted password."""
         try:
+            self._debug_log("LDAP bind attempt user_dn=%s", user_dn)
             connection = Connection(
                 server,
                 user=user_dn,
@@ -216,6 +253,7 @@ class LDAPAuthHandler:
             if self.settings["encryption"] == "starttls":
                 connection.start_tls()
             connection.unbind()
+            self._debug_log("LDAP bind succeeded user_dn=%s", user_dn)
         except LDAPBindError as exc:
             raise LDAPAuthenticationError("Password Incorrect") from exc
         except LDAPException as exc:
@@ -302,15 +340,34 @@ class LDAPAuthHandler:
         required_groups = self.settings["user_group_mapping"]
         if not required_groups:
             logger.warning("LDAP_USER_GROUP_MAPPING is empty; allowing all LDAP users")
+            self._debug_log(
+                "LDAP group match result access_allowed=True reason=no LDAP_USER_GROUP_MAPPING configured groups=%s",
+                groups,
+            )
             return True
-        return self._matches_any_group(groups, required_groups)
+
+        access_allowed = self._matches_any_group(groups, required_groups)
+        self._debug_log(
+            "LDAP group match result access_allowed=%s required_groups=%s groups=%s",
+            access_allowed,
+            required_groups,
+            groups,
+        )
+        return access_allowed
 
     def _determine_role(self, groups: list[str]) -> str:
         """Map LDAP groups to application roles."""
         admin_groups = self.settings["admin_group_mapping"]
-        if admin_groups and self._matches_any_group(groups, admin_groups):
-            return UserProfile.ROLE_ADMIN
-        return UserProfile.ROLE_READONLY
+        admin_match = bool(admin_groups and self._matches_any_group(groups, admin_groups))
+        role = UserProfile.ROLE_ADMIN if admin_match else UserProfile.ROLE_READONLY
+        self._debug_log(
+            "LDAP group match result admin_match=%s admin_groups=%s groups=%s assigned_role=%s",
+            admin_match,
+            admin_groups,
+            groups,
+            role,
+        )
+        return role
 
     def _matches_any_group(self, groups: list[str], configured_groups: list[str]) -> bool:
         """Match LDAP group DNs or names case-insensitively."""
@@ -352,4 +409,9 @@ class LDAPAuthHandler:
             return int(value)
         except (TypeError, ValueError):
             return default
+
+    def _debug_log(self, message: str, *args: Any) -> None:
+        """Emit LDAP diagnostic logs when LDAP_DEBUG_LOGGING is enabled."""
+        if self.settings.get("debug_logging"):
+            logger.info(message, *args)
         

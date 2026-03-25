@@ -20,6 +20,7 @@ SSO_ENABLED: false
 # LDAP Configuration
 LDAP_ENABLED: false
 LDAP_DISPLAY_NAME: "Central Authentication"
+LDAP_DEBUG_LOGGING: false
 LDAP_SERVER_NAME: ""
 LDAP_PORT: 389
 LDAP_ENCRYPTION: "none"  # one of: none, ssl, starttls
