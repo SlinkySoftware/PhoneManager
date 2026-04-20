@@ -1487,7 +1487,7 @@ class YealinkW70BDECT(DeviceType):
                     f"account.{idx}.label = {line_label}",
                     f"account.{idx}.display_name = {line.name}",
                     f"account.{idx}.auth_name = {line.registration_account}",
-                    f"account.{idx}.user_name = {line.registration_account}",
+                    f"account.{idx}.user_name = {line.directory_number}",
                     f"account.{idx}.password = {line.registration_password}",
                     f"account.{idx}.shared_line = {bool_flag(getattr(line, 'is_shared', False))}",
                     f"account.{idx}.sip_server.1.address = {line_primary.host}",
