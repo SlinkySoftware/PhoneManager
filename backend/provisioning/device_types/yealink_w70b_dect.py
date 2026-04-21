@@ -1404,6 +1404,7 @@ class YealinkW70BDECT(DeviceType):
 
         if admin_password:
             config_lines.append(f"security.user_password = admin:{admin_password}")
+            config_lines.append(f"security.user_password = user:{admin_password}")
 
         # Dial plan rules (site-level)
         dial_plan = getattr(site, "dial_plan", None)
