@@ -504,6 +504,7 @@ const originalLines = ref(null);
 const originalLineServerConfig = ref(null);
 const originalConfig = ref(null);
 const lineDisassociationWarning = ref('');
+const isHydratingForm = ref(false);
 
 // Compute if user is read-only
 const isReadOnly = computed(() => authStore.user?.role === 'readonly');
@@ -548,6 +549,45 @@ const normalizeDefaultValue = (option, value) => {
   return value;
 };
 
+const buildFormState = (device = {}) => ({
+  ...emptyForm(),
+  id: device.id ?? null,
+  name: device.name ?? device.description ?? '',
+  mac_address: device.mac_address ?? '',
+  device_type_id: device.device_type_id ?? null,
+  site: device.site ?? null
+});
+
+const buildDeviceConfigValues = (deviceType, savedValues = {}, typeDefaults = {}, options = {}) => {
+  const { clearPasswords = false } = options;
+  const values = {};
+
+  if (!deviceType?.deviceSpecificOptions?.sections) {
+    return values;
+  }
+
+  deviceType.deviceSpecificOptions.sections.forEach(section => {
+    section.options?.forEach(option => {
+      const savedValue = savedValues?.[option.optionId];
+      const overrideValue = typeDefaults?.[option.optionId];
+      const baseValue = savedValue !== undefined
+        ? savedValue
+        : overrideValue !== undefined
+          ? overrideValue
+          : option.default;
+
+      if (clearPasswords && option.type === 'password') {
+        values[option.optionId] = '';
+        return;
+      }
+
+      values[option.optionId] = normalizeDefaultValue(option, baseValue);
+    });
+  });
+
+  return values;
+};
+
 const fetchDeviceDefaultsForType = async (typeId) => {
   if (!typeId) return {};
   if (Object.prototype.hasOwnProperty.call(deviceTypeDefaults.value, typeId)) {
@@ -558,7 +598,7 @@ const fetchDeviceDefaultsForType = async (typeId) => {
     const defaults = data.device_defaults || {};
     deviceTypeDefaults.value[typeId] = defaults;
     return defaults;
-  } catch (error) {
+  } catch {
     deviceTypeDefaults.value[typeId] = {};
     return {};
   }
@@ -853,32 +893,12 @@ const moveDeviceDownSelected = (optionId, idx) => {
   }
 };
 
-const optionIdsForType = (deviceType) => {
-  if (!deviceType?.deviceSpecificOptions?.sections) return new Set();
-  const ids = new Set();
-  deviceType.deviceSpecificOptions.sections.forEach(section => {
-    (section.options || []).forEach(option => {
-      if (option.optionId) ids.add(option.optionId);
-    });
-  });
-  return ids;
-};
-
-const preserveConfigForType = (newType) => {
-  const allowedIds = optionIdsForType(newType);
-  const currentConfig = { ...deviceConfigValues.value };
-  const filtered = {};
-  allowedIds.forEach(key => {
-    if (currentConfig[key] !== undefined) {
-      filtered[key] = currentConfig[key];
-    }
-  });
-  deviceConfigValues.value = filtered;
-};
-
 watch(
   () => form.value.device_type_id,
   async (newTypeId) => {
+    if (isHydratingForm.value) {
+      return;
+    }
     if (!newTypeId) {
       formLines.value = [];
       lineServerConfig.value = {};
@@ -959,177 +979,128 @@ const onPasswordFieldChange = (optionId, value) => {
 };
 
 const openEdit = async (row) => {
-  form.value = { ...row };
   errorMessage.value = '';
   lineDisassociationWarning.value = '';
   passwordFieldsChanged.value = {};
-  
-  // Wait for selectedDeviceType to compute
-  await new Promise(resolve => setTimeout(resolve, 0));
-  
-  // Load line assignments
-  if (selectedDeviceType.value) {
-    formLines.value = Array(selectedDeviceType.value.numberOfLines).fill(null);
-    if (row.line_1) formLines.value[0] = row.line_1;
-    if (row.lines && Array.isArray(row.lines)) {
-      row.lines.forEach((lineId, idx) => {
-        const formIdx = idx + 1; // lines array starts at slot 1 (slot 0 is line_1)
+  isHydratingForm.value = true;
+
+  try {
+    const { data } = await api.get(`/devices/${row.id}/`);
+    form.value = buildFormState(data);
+
+    const deviceType = deviceTypes.value.find(dt => dt.typeId === form.value.device_type_id);
+    const lineCount = deviceType?.numberOfLines || 0;
+
+    formLines.value = Array(lineCount).fill(null);
+    if (data.line_1 && lineCount > 0) {
+      formLines.value[0] = data.line_1;
+    }
+    if (Array.isArray(data.lines)) {
+      data.lines.forEach((lineId, idx) => {
+        const formIdx = idx + 1;
         if (formIdx < formLines.value.length) {
           formLines.value[formIdx] = lineId;
         }
       });
     }
-  }
-  
-  // Load device-specific configuration
-  deviceConfigValues.value = row.device_specific_configuration || {};
 
-  // Load dedicated line-level SIP server configuration
-  if (selectedDeviceType.value?.supportsSipServersPerLine) {
-    resetLineServerConfig(selectedDeviceType.value.numberOfLines, row.line_configuration || {});
-  } else {
-    lineServerConfig.value = {};
+    const typeDefaults = await fetchDeviceDefaultsForType(form.value.device_type_id);
+    deviceConfigValues.value = buildDeviceConfigValues(
+      deviceType,
+      data.device_specific_configuration || {},
+      typeDefaults,
+      { clearPasswords: true }
+    );
+
+    if (deviceType?.supportsSipServersPerLine) {
+      resetLineServerConfig(lineCount, data.line_configuration || {});
+    } else {
+      lineServerConfig.value = {};
+    }
+
+    originalForm.value = JSON.parse(JSON.stringify(form.value));
+    originalLines.value = JSON.parse(JSON.stringify(formLines.value));
+    originalLineServerConfig.value = JSON.parse(JSON.stringify(lineServerConfig.value));
+    originalConfig.value = JSON.parse(JSON.stringify(deviceConfigValues.value));
+    formHasChanges.value = false;
+
+    dialog.value = true;
+  } catch (error) {
+    errorMessage.value = extractErrorMessage(error);
+  } finally {
+    isHydratingForm.value = false;
   }
-  
-  // Clear password fields for security - user must enter new ones if they want to change them
-  if (selectedDeviceType.value?.deviceSpecificOptions?.sections) {
-    selectedDeviceType.value.deviceSpecificOptions.sections.forEach(section => {
-      section.options?.forEach(option => {
-        if (option.type === 'password') {
-          deviceConfigValues.value[option.optionId] = '';
-        }
-        // Ensure multiselect/orderedmultiselect values are arrays
-        if (option.type === 'multiselect' || option.type === 'orderedmultiselect') {
-          const currentValue = deviceConfigValues.value[option.optionId];
-          if (!Array.isArray(currentValue)) {
-            // Convert string to array or initialize empty
-            deviceConfigValues.value[option.optionId] = currentValue && currentValue.length > 0 ? [currentValue] : [];
-          }
-        }
-      });
-    });
-  }
-  
-  // Track original state for changes detection
-  originalForm.value = JSON.parse(JSON.stringify(form.value));
-  originalLines.value = JSON.parse(JSON.stringify(formLines.value));
-  originalLineServerConfig.value = JSON.parse(JSON.stringify(lineServerConfig.value));
-  originalConfig.value = JSON.parse(JSON.stringify(deviceConfigValues.value));
-  formHasChanges.value = false;
-  
-  dialog.value = true;
 };
 
 const openClone = async (row) => {
-  // Copy source device to form
-  form.value = { ...row };
-  
-  // Set cloned device name
-  form.value.name = "Copy Of " + row.name;
-  
-  // Clear fields that must be unique or empty for new device
-  form.value.mac_address = '';
-  form.value.id = undefined;
-  
-  // Preserve device type and site
-  // (already copied in { ...row })
-  
   errorMessage.value = '';
   lineDisassociationWarning.value = '';
   passwordFieldsChanged.value = {};
-  
-  // Wait for selectedDeviceType to compute
-  await new Promise(resolve => setTimeout(resolve, 0));
-  
-  // Initialize line assignments with source device's lines
-  if (selectedDeviceType.value) {
-    formLines.value = Array(selectedDeviceType.value.numberOfLines).fill(null);
-    
-    // Copy line_1 if exists
-    if (row.line_1) {
-      formLines.value[0] = row.line_1;
+  isHydratingForm.value = true;
+
+  try {
+    const { data } = await api.get(`/devices/${row.id}/`);
+    form.value = buildFormState(data);
+    form.value.name = `Copy Of ${data.name}`;
+    form.value.mac_address = '';
+    form.value.id = undefined;
+
+    const deviceType = deviceTypes.value.find(dt => dt.typeId === form.value.device_type_id);
+    const lineCount = deviceType?.numberOfLines || 0;
+
+    formLines.value = Array(lineCount).fill(null);
+    if (data.line_1 && lineCount > 0) {
+      formLines.value[0] = data.line_1;
     }
-    
-    // Copy additional lines from lines array
-    if (row.lines && Array.isArray(row.lines)) {
-      row.lines.forEach((lineId, idx) => {
-        const formIdx = idx + 1; // lines array starts at slot 1 (slot 0 is line_1)
+    if (Array.isArray(data.lines)) {
+      data.lines.forEach((lineId, idx) => {
+        const formIdx = idx + 1;
         if (formIdx < formLines.value.length) {
           formLines.value[formIdx] = lineId;
         }
       });
     }
-    
-    // Filter out non-shared lines (keep only shared lines in their original slots)
+
     formLines.value = formLines.value.map(lineId => {
       if (lineId === null || lineId === undefined) return null;
       const line = lines.value.find(l => l.id === lineId);
       return (line && line.is_shared) ? lineId : null;
     });
 
-    if (selectedDeviceType.value.supportsSipServersPerLine) {
-      resetLineServerConfig(selectedDeviceType.value.numberOfLines);
+    if (deviceType?.supportsSipServersPerLine) {
+      resetLineServerConfig(lineCount);
     } else {
       lineServerConfig.value = {};
     }
-  }
-  
-  // Copy device-specific configuration with doNotClone flag handling
-  deviceConfigValues.value = {};
-  
-  if (selectedDeviceType.value?.deviceSpecificOptions?.sections) {
-    selectedDeviceType.value.deviceSpecificOptions.sections.forEach(section => {
+
+    const typeDefaults = await fetchDeviceDefaultsForType(form.value.device_type_id);
+    const sourceConfig = data.device_specific_configuration || {};
+    deviceConfigValues.value = buildDeviceConfigValues(deviceType, {}, typeDefaults, { clearPasswords: true });
+
+    deviceType?.deviceSpecificOptions?.sections?.forEach(section => {
       section.options?.forEach(option => {
-        let value;
-        
-        // Check doNotClone flag
-        if (option.doNotClone === true) {
-          // Use default value instead of copying from source
-          value = option.default;
-        } else {
-          // Copy value from source device configuration
-          value = row.device_specific_configuration?.[option.optionId];
-          
-          // If value is undefined, use default
-          if (value === undefined || value === null) {
-            value = option.default;
-          }
+        if (option.doNotClone === true || option.type === 'password') {
+          return;
         }
-        
-        // Handle password fields - always clear for security
-        if (option.type === 'password') {
-          deviceConfigValues.value[option.optionId] = '';
-        }
-        // Ensure multiselect/orderedmultiselect values are arrays
-        else if (option.type === 'multiselect' || option.type === 'orderedmultiselect') {
-          if (value === undefined || value === null) {
-            deviceConfigValues.value[option.optionId] = [];
-          } else if (!Array.isArray(value)) {
-            deviceConfigValues.value[option.optionId] = [value];
-          } else {
-            deviceConfigValues.value[option.optionId] = [...value];
-          }
-        }
-        // Handle other types
-        else {
-          if (value === undefined || value === null) {
-            deviceConfigValues.value[option.optionId] = option.default ?? '';
-          } else {
-            deviceConfigValues.value[option.optionId] = value;
-          }
+        const savedValue = sourceConfig[option.optionId];
+        if (savedValue !== undefined && savedValue !== null) {
+          deviceConfigValues.value[option.optionId] = normalizeDefaultValue(option, savedValue);
         }
       });
     });
+
+    originalForm.value = null;
+    originalLines.value = null;
+    originalLineServerConfig.value = null;
+    originalConfig.value = null;
+    formHasChanges.value = false;
+
+    dialog.value = true;
+  } catch (error) {
+    errorMessage.value = extractErrorMessage(error);
+  } finally {
+    isHydratingForm.value = false;
   }
-  
-  // Track as new device (no original state to compare against)
-  originalForm.value = null;
-  originalLines.value = null;
-  originalLineServerConfig.value = null;
-  originalConfig.value = null;
-  formHasChanges.value = false;
-  
-  dialog.value = true;
 };
 
 const save = async () => {
@@ -1179,6 +1150,8 @@ const save = async () => {
   saving.value = true;
   try {
     form.value.mac_address = normalizeMac(form.value.mac_address);
+    const formPayload = { ...form.value };
+    delete formPayload.description;
     
     // Prepare device config, removing password fields that haven't been changed
     const configToSend = { ...deviceConfigValues.value };
@@ -1197,7 +1170,8 @@ const save = async () => {
     }
     
     const payload = {
-      ...form.value,
+      ...formPayload,
+      name: form.value.name.trim(),
       line_1: formLines.value[0],
       lines: formLines.value.slice(1).filter(v => v !== null && v !== undefined),
       line_configuration: supportsSipServersPerLine.value ? buildLineConfigurationPayload() : {},
