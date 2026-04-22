@@ -994,7 +994,7 @@ class YealinkSIPT33G(DeviceType):
                 f"voice.rtcp_xr.enable = {bool_flag(vq_enable)}",
             ]
         )
-        config_lines.append(f"sstatic.security.force_password_change = 0")  # Disable forced password change on first login
+        config_lines.append(f"static.security.force_password_change = 0")  # Disable forced password change on first login
         if admin_password:
             config_lines.append(f"security.user_password = admin:{admin_password}")
             config_lines.append(f"security.user_password = user:{admin_password}")
