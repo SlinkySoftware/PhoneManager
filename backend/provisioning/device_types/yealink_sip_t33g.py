@@ -603,6 +603,7 @@ class YealinkSIPT33G(DeviceType):
                 
                 # Check if timezone observes DST
                 observes_dst = (jan_offset_hours != jul_offset_hours)
+                is_southern_hemisphere = observes_dst and jan_offset_hours > jul_offset_hours
                 
                 config = {
                     "time_zone": f"{int(standard_offset_hours):+d}",  # Format as +10, -5, etc.
@@ -610,6 +611,8 @@ class YealinkSIPT33G(DeviceType):
                     "dst_time_type": 1 if observes_dst else 0,  # 1=DST by day-of-week
                     "offset_time": 60 if observes_dst else 0,  # DST offset in minutes
                     "manual_ntp_srv_prior": 1,  # Use manual NTP servers
+                    "start_time": "",
+                    "end_time": "",
                 }
                 
                 if observes_dst:
@@ -624,49 +627,37 @@ class YealinkSIPT33G(DeviceType):
                         transitions = tz._utc_transition_times
                         trans_info = tz._transition_info
                         
-                        # Find 2026 transitions (current and next)
-                        spring_trans = None  # Earlier transition (spring for NH, autumn for SH)
-                        autumn_trans = None  # Later transition (autumn for NH, spring for SH)
-                        
                         for i, trans_time in enumerate(transitions):
-                            if trans_time.year == 2026:
-                                # This transition is in 2026
-                                trans_utc = trans_time
-                                next_offset = trans_info[i][0].total_seconds() / 3600
-                                
-                                # Determine if this is spring-forward or fall-back
-                                if i > 0:
-                                    prev_offset = trans_info[i - 1][0].total_seconds() / 3600
-                                    
-                                    if next_offset > prev_offset:  # Spring forward (DST starts)
-                                        spring_trans = trans_time
-                                    else:  # Fall back (DST ends)
-                                        autumn_trans = trans_time
-                        
-                        # If we found both transitions, use them
-                        if spring_trans and autumn_trans:
-                            # Ensure spring comes before autumn in the calendar year
-                            if spring_trans.month > autumn_trans.month:
-                                spring_trans, autumn_trans = autumn_trans, spring_trans
-                            
-                            config["start_time"] = format_dst_transition(spring_trans)
-                            config["end_time"] = format_dst_transition(autumn_trans)
-                        else:
-                            # Fallback: Use common patterns
-                            if standard_offset_hours > 0:  # Likely Northern Hemisphere
-                                config["start_time"] = "3/2/7/2"  # 2nd Sunday in March at 2am
-                                config["end_time"] = "11/1/7/2"   # 1st Sunday in November at 2am
-                            else:  # Likely Southern Hemisphere
+                            if trans_time.year != 2026 or i == 0:
+                                continue
+
+                            prev_offset = trans_info[i - 1][0]
+                            next_offset = trans_info[i][0]
+
+                            # Yealink expects the transition in local wall time before the offset change.
+                            local_transition = trans_time + prev_offset
+
+                            if next_offset > prev_offset:  # DST starts
+                                config["start_time"] = format_dst_transition(local_transition)
+                            elif next_offset < prev_offset:  # DST ends
+                                config["end_time"] = format_dst_transition(local_transition)
+
+                        if not config["start_time"] or not config["end_time"]:
+                            # Fallback: Use common patterns for the detected hemisphere.
+                            if is_southern_hemisphere:
                                 config["start_time"] = "10/1/7/2"  # 1st Sunday in October at 2am
                                 config["end_time"] = "4/1/7/3"     # 1st Sunday in April at 3am
-                    except (AttributeError, Exception):
+                            else:
+                                config["start_time"] = "3/2/7/2"  # 2nd Sunday in March at 2am
+                                config["end_time"] = "11/1/7/2"   # 1st Sunday in November at 2am
+                    except Exception:
                         # Fallback if transition info unavailable
-                        if standard_offset_hours > 0:
-                            config["start_time"] = "3/2/7/2"
-                            config["end_time"] = "11/1/7/2"
-                        else:
+                        if is_southern_hemisphere:
                             config["start_time"] = "10/1/7/2"
                             config["end_time"] = "4/1/7/3"
+                        else:
+                            config["start_time"] = "3/2/7/2"
+                            config["end_time"] = "11/1/7/2"
                 
                 return config
             except Exception:
