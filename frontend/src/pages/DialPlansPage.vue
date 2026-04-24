@@ -54,7 +54,7 @@
     </q-table>
 
     <!-- Create/Edit Dialog -->
-    <q-dialog v-model="dialog" @hide="resetForm">
+    <q-dialog v-model="dialog" persistent :no-esc="true" @hide="resetForm">
       <q-card style="min-width: 700px; max-width: 900px">
         <q-card-section class="text-h6">{{ isReadOnly && form.id ? 'View' : form.id ? 'Edit' : 'Create' }} Dial Plan</q-card-section>
         <q-card-section v-if="errorMessage" class="bg-negative text-white q-mb-md">

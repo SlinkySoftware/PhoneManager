@@ -113,7 +113,7 @@
     </q-table>
 
     <!-- Create User Dialog -->
-    <q-dialog v-model="showCreateDialog">
+    <q-dialog v-model="showCreateDialog" persistent :no-esc="true">
       <q-card style="min-width: 500px">
         <q-card-section class="text-h6">Add User</q-card-section>
 
@@ -202,7 +202,7 @@
     </q-dialog>
 
     <!-- Edit User Dialog -->
-    <q-dialog v-model="showEditDialog">
+    <q-dialog v-model="showEditDialog" persistent :no-esc="true">
       <q-card style="min-width: 500px">
         <q-card-section class="text-h6">Edit User</q-card-section>
 

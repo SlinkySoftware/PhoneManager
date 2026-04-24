@@ -59,7 +59,7 @@
       </template>
     </q-table>
 
-    <q-dialog v-model="dialog">
+    <q-dialog v-model="dialog" persistent :no-esc="true">
       <q-card style="min-width: 520px">
         <q-card-section class="text-h6">{{ isReadOnly && form.id ? 'View' : form.id ? 'Edit' : 'Create' }} Site</q-card-section>
         <q-card-section v-if="errorMessage" class="bg-negative text-white q-mb-md">

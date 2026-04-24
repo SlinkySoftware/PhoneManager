@@ -47,7 +47,7 @@
     </q-card>
 
     <!-- Common Options Dialog -->
-    <q-dialog v-model="showOptionsDialog" class="q-gutter-md">
+    <q-dialog v-model="showOptionsDialog" class="q-gutter-md" persistent :no-esc="true">
       <q-card style="min-width: 600px; max-width: 800px" class="bg-grey-9">
         <!-- Header -->
         <q-card-section class="bg-green-10 text-white">
@@ -285,7 +285,7 @@
     </q-dialog>
 
     <!-- Device Defaults Dialog -->
-    <q-dialog v-model="showDefaultsDialog" class="q-gutter-md">
+    <q-dialog v-model="showDefaultsDialog" class="q-gutter-md" persistent :no-esc="true">
       <q-card style="min-width: 700px; max-width: 1000px" class="bg-grey-9">
         <!-- Header -->
         <q-card-section class="bg-teal-8 text-white">
