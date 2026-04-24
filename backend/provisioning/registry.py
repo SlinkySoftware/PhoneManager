@@ -6,15 +6,15 @@ from typing import Dict, List, Type
 
 
 from .device_types.base import DeviceType
-from .device_types.example_sip_phone import ExampleSIPPhone
+#from .device_types.example_sip_phone import ExampleSIPPhone
 from .device_types.grandstream_ht812 import GrandstreamHT812
 from .device_types.polycom_soundpoint_ip650 import PolycomSoundPointIP650
 from .device_types.yealink_sip_t33g import YealinkSIPT33G
 from .device_types.yealink_w70b_dect import YealinkW70BDECT
 
-
+# The order here is the order they appear in the UI. The keys must match the TypeID of the device type.
 REGISTERED_TYPES: Dict[str, Type[DeviceType]] = {
-    ExampleSIPPhone.TypeID: ExampleSIPPhone,
+#    ExampleSIPPhone.TypeID: ExampleSIPPhone,
     GrandstreamHT812.TypeID: GrandstreamHT812,
     PolycomSoundPointIP650.TypeID: PolycomSoundPointIP650,
     YealinkSIPT33G.TypeID: YealinkSIPT33G,
