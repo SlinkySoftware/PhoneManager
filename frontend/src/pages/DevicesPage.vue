@@ -242,13 +242,13 @@
                       dense
                       dark
                       :disable="isReadOnly"
-                      :placeholder="form.id ? '••••••••' : ''"
+                      :placeholder="form.id || isCloneMode ? '••••••••' : ''"
                       @update:model-value="onPasswordFieldChange(option.optionId, $event)"
-                      :rules="option.mandatory && !form.id ? [val => !!val || `${option.friendlyName} is required`] : []"
+                      :rules="option.mandatory && !form.id && !isCloneMode && !hasSelectedTypeDefaultPassword(option.optionId) ? [val => !!val || `${option.friendlyName} is required`] : []"
                     >
                       <template v-slot:append>
                         <q-icon v-if="passwordFieldsChanged[option.optionId]" name="warning" color="orange">
-                          <q-tooltip>Password will be changed</q-tooltip>
+                          <q-tooltip>{{ form.id ? 'Password will be changed' : isCloneMode ? 'Password will be overridden on the cloned device' : 'Password will be set' }}</q-tooltip>
                         </q-icon>
                       </template>
                       <template v-slot:hint>
@@ -257,6 +257,18 @@
                         </span>
                         <span v-if="form.id && passwordFieldsChanged[option.optionId]" class="text-orange" style="font-weight: 500;">
                           <q-icon name="warning" size="xs" /> Password will be changed
+                        </span>
+                        <span v-if="isCloneMode && !passwordFieldsChanged[option.optionId]" class="text-grey-6">
+                          Leave blank to copy the source device password securely on save
+                        </span>
+                        <span v-if="isCloneMode && passwordFieldsChanged[option.optionId]" class="text-orange" style="font-weight: 500;">
+                          <q-icon name="warning" size="xs" /> Password will override the source device value
+                        </span>
+                        <span v-if="!form.id && !isCloneMode && hasSelectedTypeDefaultPassword(option.optionId) && !passwordFieldsChanged[option.optionId]" class="text-grey-6">
+                          Leave blank to use the device type default password securely on save
+                        </span>
+                        <span v-if="!form.id && !isCloneMode && hasSelectedTypeDefaultPassword(option.optionId) && passwordFieldsChanged[option.optionId]" class="text-orange" style="font-weight: 500;">
+                          <q-icon name="warning" size="xs" /> Password will override the device type default
                         </span>
                       </template>
                     </q-input>
@@ -521,7 +533,9 @@ const formLines = ref([]);
 const lineServerConfig = ref({});
 const deviceConfigValues = ref({});
 const passwordFieldsChanged = ref({});
+const cloneSourceDeviceId = ref(null);
 const deviceTypeDefaults = ref({});
+const deviceTypeDefaultPasswordPresence = ref({});
 const isValidMac = (val) => {
   if (!val) return false;
   const patterns = [
@@ -596,10 +610,13 @@ const fetchDeviceDefaultsForType = async (typeId) => {
   try {
     const { data } = await api.get(`/device-type-config/${typeId}/`);
     const defaults = data.device_defaults || {};
+    const passwordPresence = data.device_default_password_fields || {};
     deviceTypeDefaults.value[typeId] = defaults;
+    deviceTypeDefaultPasswordPresence.value[typeId] = passwordPresence;
     return defaults;
   } catch {
     deviceTypeDefaults.value[typeId] = {};
+    deviceTypeDefaultPasswordPresence.value[typeId] = {};
     return {};
   }
 };
@@ -609,6 +626,13 @@ const selectedDeviceType = computed(() => {
   if (!form.value.device_type_id) return null;
   return deviceTypes.value.find(dt => dt.typeId === form.value.device_type_id);
 });
+
+const isCloneMode = computed(() => !form.value.id && !!cloneSourceDeviceId.value);
+
+const hasSelectedTypeDefaultPassword = (optionId) => {
+  if (!form.value.device_type_id) return false;
+  return !!deviceTypeDefaultPasswordPresence.value[form.value.device_type_id]?.[optionId];
+};
 
 const supportsSipServersPerLine = computed(() => !!selectedDeviceType.value?.supportsSipServersPerLine);
 
@@ -949,6 +973,7 @@ const openCreate = () => {
   form.value = emptyForm();
   formLines.value = [];
   lineServerConfig.value = {};
+  cloneSourceDeviceId.value = null;
   // Initialize device config with defaults from selected device type
   deviceConfigValues.value = {};
   const deviceType = deviceTypes.value.find(dt => dt.typeId === form.value.device_type_id);
@@ -975,13 +1000,14 @@ const openCreate = () => {
 };
 
 const onPasswordFieldChange = (optionId, value) => {
-  passwordFieldsChanged.value[optionId] = form.value.id && value && value.length > 0;
+  passwordFieldsChanged.value[optionId] = !!(value && value.length > 0);
 };
 
 const openEdit = async (row) => {
   errorMessage.value = '';
   lineDisassociationWarning.value = '';
   passwordFieldsChanged.value = {};
+  cloneSourceDeviceId.value = null;
   isHydratingForm.value = true;
 
   try {
@@ -1036,6 +1062,7 @@ const openClone = async (row) => {
   errorMessage.value = '';
   lineDisassociationWarning.value = '';
   passwordFieldsChanged.value = {};
+  cloneSourceDeviceId.value = row.id;
   isHydratingForm.value = true;
 
   try {
@@ -1177,6 +1204,23 @@ const save = async () => {
       line_configuration: supportsSipServersPerLine.value ? buildLineConfigurationPayload() : {},
       device_specific_configuration: configToSend
     };
+
+    if (!payload.id && cloneSourceDeviceId.value) {
+      payload.clone_source_device_id = cloneSourceDeviceId.value;
+    }
+
+    Object.keys(configToSend).forEach(key => {
+      const isPasswordField = selectedDeviceType.value?.deviceSpecificOptions?.sections?.some(section =>
+        section.options?.some(opt => opt.optionId === key && opt.type === 'password')
+      );
+      if (!isPasswordField) {
+        return;
+      }
+
+      if (!configToSend[key] || configToSend[key] === '') {
+        delete configToSend[key];
+      }
+    });
     
     if (payload.id) {
       await api.put(`/devices/${payload.id}/`, payload);
@@ -1185,6 +1229,7 @@ const save = async () => {
     }
     dialog.value = false;
     passwordFieldsChanged.value = {};
+    cloneSourceDeviceId.value = null;
     await loadDevices();
   } catch (error) {
     errorMessage.value = extractErrorMessage(error);

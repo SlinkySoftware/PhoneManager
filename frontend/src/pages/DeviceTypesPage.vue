@@ -697,6 +697,7 @@ const openDeviceDefaults = async (deviceType) => {
   try {
     const { data } = await api.get(`/device-type-config/${deviceType.typeId}/`);
     const savedDefaults = data.device_defaults || {};
+    const savedPasswordFields = data.device_default_password_fields || {};
 
     if (deviceType.deviceSpecificOptions?.sections) {
       deviceType.deviceSpecificOptions.sections.forEach(section => {
@@ -705,7 +706,7 @@ const openDeviceDefaults = async (deviceType) => {
           const baseDefault = option.default ?? (option.type === 'orderedmultiselect' || option.type === 'multiselect' ? [] : '');
 
           if (option.type === 'password') {
-            if (savedValue) {
+            if (savedPasswordFields[option.optionId]) {
               defaultPasswordHasValue.value[option.optionId] = true;
               defaultsValues.value[option.optionId] = '';
             } else {

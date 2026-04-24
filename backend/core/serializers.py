@@ -139,6 +139,7 @@ class LineSerializer(serializers.ModelSerializer):
 class DeviceSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source="description", required=False, allow_blank=True)
     line_directory_numbers = serializers.SerializerMethodField(read_only=True)
+    clone_source_device_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = Device
@@ -157,6 +158,7 @@ class DeviceSerializer(serializers.ModelSerializer):
             "last_provisioned_at",
             "last_requested_ip_address",
             "line_directory_numbers",
+            "clone_source_device_id",
         ]
 
     def get_line_directory_numbers(self, obj):
@@ -203,6 +205,76 @@ class DeviceSerializer(serializers.ModelSerializer):
                 if option_id := option.get("optionId"):
                     option_ids.add(option_id)
         return option_ids
+
+    def _password_option_ids(self, device_type_id: str) -> set:
+        device_type_cls = get_device_type(device_type_id)
+        if not device_type_cls:
+            return set()
+
+        password_fields = set()
+        sections = device_type_cls.DeviceSpecificOptions.get("sections", [])
+        for section in sections:
+            for option in section.get("options", []):
+                if option.get("type") == "password" and option.get("optionId"):
+                    password_fields.add(option["optionId"])
+        return password_fields
+
+    def _merge_device_default_passwords(self, validated_data):
+        device_type_id = validated_data.get("device_type_id")
+        if not device_type_id:
+            return
+
+        password_fields = self._password_option_ids(device_type_id)
+        if not password_fields:
+            return
+
+        try:
+            device_type_config = DeviceTypeConfig.objects.get(type_id=device_type_id)
+        except DeviceTypeConfig.DoesNotExist:
+            return
+
+        default_config = device_type_config.get_decrypted_device_defaults()
+        incoming_config = validated_data.setdefault("device_specific_configuration", {})
+
+        for field in password_fields:
+            if incoming_config.get(field):
+                continue
+            default_value = default_config.get(field)
+            if default_value:
+                incoming_config[field] = default_value
+
+    def _merge_clone_passwords(self, validated_data, clone_source_device_id):
+        if not clone_source_device_id:
+            return
+
+        source_device = Device.objects.filter(pk=clone_source_device_id).first()
+        if not source_device:
+            raise serializers.ValidationError({"clone_source_device_id": "Source device not found"})
+
+        device_type_id = validated_data.get("device_type_id")
+        password_fields = self._password_option_ids(device_type_id)
+        if not password_fields:
+            return
+
+        source_config = source_device.get_decrypted_device_config()
+        incoming_config = validated_data.setdefault("device_specific_configuration", {})
+
+        for field in password_fields:
+            if incoming_config.get(field):
+                continue
+            source_value = source_config.get(field)
+            if source_value:
+                incoming_config[field] = source_value
+
+    def _masked_device_config(self, instance):
+        config = instance.get_decrypted_device_config()
+        if not config:
+            return {}
+
+        masked_config = dict(config)
+        for field in self._password_option_ids(instance.device_type_id):
+            masked_config.pop(field, None)
+        return masked_config
 
     def validate(self, attrs):
         instance = getattr(self, "instance", None)
@@ -370,6 +442,10 @@ class DeviceSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         lines = validated_data.pop("lines", [])
+        clone_source_device_id = validated_data.pop("clone_source_device_id", None)
+
+        self._merge_clone_passwords(validated_data, clone_source_device_id)
+        self._merge_device_default_passwords(validated_data)
         
         # Encrypt device-specific configuration passwords
         if 'device_specific_configuration' in validated_data:
@@ -388,6 +464,7 @@ class DeviceSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         """Update device, preserving password fields that weren't changed."""
         lines = validated_data.pop("lines", None)
+        validated_data.pop("clone_source_device_id", None)
         
         # Handle password fields in device_specific_configuration
         if 'device_specific_configuration' in validated_data:
@@ -395,27 +472,16 @@ class DeviceSerializer(serializers.ModelSerializer):
             
             # Get decrypted existing config for comparison
             existing_config_decrypted = instance.get_decrypted_device_config()
-            
+
             # Get device type to identify password fields
             device_type_id = validated_data.get('device_type_id', instance.device_type_id)
-            from provisioning.registry import get_device_type
-            device_type_cls = get_device_type(device_type_id)
-            
-            if device_type_cls:
-                # Identify password fields
-                password_fields = set()
-                sections = device_type_cls.DeviceSpecificOptions.get("sections", [])
-                for section in sections:
-                    for option in section.get("options", []):
-                        if option.get("type") == "password":
-                            password_fields.add(option.get("optionId"))
-                
-                # Preserve existing password values if not provided in update
-                for field in password_fields:
-                    if field not in incoming_config or not incoming_config.get(field):
-                        # Keep existing decrypted password value
-                        if field in existing_config_decrypted:
-                            incoming_config[field] = existing_config_decrypted[field]
+            password_fields = self._password_option_ids(device_type_id)
+
+            # Preserve existing password values if not provided in update
+            for field in password_fields:
+                if field not in incoming_config or not incoming_config.get(field):
+                    if field in existing_config_decrypted:
+                        incoming_config[field] = existing_config_decrypted[field]
             
             # Encrypt the passwords in the incoming config
             instance.set_encrypted_device_config(incoming_config)
@@ -427,11 +493,10 @@ class DeviceSerializer(serializers.ModelSerializer):
         return device
     
     def to_representation(self, instance):
-        """Return decrypted device config in API responses."""
+        """Return device config in API responses with password fields omitted."""
         data = super().to_representation(instance)
-        # Decrypt device-specific configuration for API response
         if instance.device_specific_configuration:
-            data['device_specific_configuration'] = instance.get_decrypted_device_config()
+            data['device_specific_configuration'] = self._masked_device_config(instance)
         return data
 
 
@@ -450,12 +515,42 @@ class DeviceTypeConfigSerializer(serializers.ModelSerializer):
         model = DeviceTypeConfig
         fields = ["type_id", "common_options", "saved_values", "device_defaults"]
 
+    def _device_default_password_option_ids(self, instance) -> set:
+        device_type_cls = get_device_type(instance.type_id)
+        if not device_type_cls:
+            return set()
+
+        password_fields = set()
+        for section in device_type_cls.DeviceSpecificOptions.get('sections', []):
+            for option in section.get('options', []):
+                if option.get('type') == 'password' and option.get('optionId'):
+                    password_fields.add(option['optionId'])
+        return password_fields
+
+    def _masked_device_defaults(self, instance) -> dict:
+        defaults = instance.get_decrypted_device_defaults()
+        if not defaults:
+            return {}
+
+        masked_defaults = dict(defaults)
+        for field in self._device_default_password_option_ids(instance):
+            masked_defaults.pop(field, None)
+        return masked_defaults
+
+    def _device_default_password_fields(self, instance) -> dict:
+        encrypted_defaults = instance.device_defaults or {}
+        return {
+            field: bool(encrypted_defaults.get(field))
+            for field in self._device_default_password_option_ids(instance)
+        }
+
     def to_representation(self, instance):
         """Include decrypted saved_values in the response."""
         data = super().to_representation(instance)
         # Return decrypted saved values
         data['saved_values'] = instance.get_decrypted_saved_values()
-        data['device_defaults'] = instance.get_decrypted_device_defaults()
+        data['device_defaults'] = self._masked_device_defaults(instance)
+        data['device_default_password_fields'] = self._device_default_password_fields(instance)
         return data
 
     def create(self, validated_data):
