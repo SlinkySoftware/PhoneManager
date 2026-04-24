@@ -9,6 +9,7 @@ from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from django.utils.crypto import get_random_string
 from openpyxl import Workbook, load_workbook
 from rest_framework.test import APIClient
 
@@ -165,3 +166,56 @@ class BulkImportApiTests(TestCase):
         output = BytesIO()
         workbook.save(output)
         return SimpleUploadedFile(filename, output.getvalue(), content_type=XLSX_CONTENT_TYPE)
+
+
+class UserApiTests(TestCase):
+    """Exercise user management safety checks."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.test_password = get_random_string(24)
+
+        self.external_admin = User.objects.create_user(username="sso-admin", password=self.test_password)
+        UserProfile.objects.create(
+            user=self.external_admin,
+            role=UserProfile.ROLE_ADMIN,
+            auth_source=UserProfile.AUTH_SOURCE_SAML,
+        )
+
+    def test_delete_rejects_last_enabled_local_admin(self):
+        target_user = User.objects.create_user(username="local-admin", password=self.test_password)
+        UserProfile.objects.create(
+            user=target_user,
+            role=UserProfile.ROLE_ADMIN,
+            auth_source=UserProfile.AUTH_SOURCE_LOCAL,
+        )
+
+        self.client.force_authenticate(self.external_admin)
+
+        response = self.client.delete(reverse("user-detail", args=[target_user.id]))
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error_code"], "last_local_admin")
+        self.assertTrue(User.objects.filter(pk=target_user.pk).exists())
+
+    def test_delete_allows_local_admin_when_another_enabled_local_admin_exists(self):
+        fallback_admin = User.objects.create_user(username="local-admin-2", password=self.test_password)
+        UserProfile.objects.create(
+            user=fallback_admin,
+            role=UserProfile.ROLE_ADMIN,
+            auth_source=UserProfile.AUTH_SOURCE_LOCAL,
+        )
+        target_user = User.objects.create_user(username="local-admin-1", password=self.test_password)
+        UserProfile.objects.create(
+            user=target_user,
+            role=UserProfile.ROLE_ADMIN,
+            auth_source=UserProfile.AUTH_SOURCE_LOCAL,
+        )
+
+        self.client.force_authenticate(self.external_admin)
+
+        response = self.client.delete(reverse("user-detail", args=[target_user.id]))
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(User.objects.filter(pk=target_user.pk).exists())
+        self.assertTrue(User.objects.filter(pk=fallback_admin.pk).exists())

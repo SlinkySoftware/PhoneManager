@@ -730,6 +730,25 @@ class UserViewSet(viewsets.ModelViewSet):
         profile = getattr(user, 'profile', None)
         auth_source = profile.auth_source if profile else UserProfile.AUTH_SOURCE_LOCAL
 
+        if (
+            profile
+            and user.is_active
+            and profile.role == UserProfile.ROLE_ADMIN
+            and profile.is_local
+            and not User.objects.filter(
+                is_active=True,
+                profile__role=UserProfile.ROLE_ADMIN,
+                profile__auth_source=UserProfile.AUTH_SOURCE_LOCAL,
+            ).exclude(pk=user.pk).exists()
+        ):
+            return Response(
+                {
+                    'detail': 'Cannot delete the last enabled local administrator. Create or enable another local administrator first.',
+                    'error_code': 'last_local_admin'
+                },
+                status=status.HTTP_409_CONFLICT
+            )
+
         user.delete()
         logger.info("Deleted %s user: %s", auth_source, username)
         return Response(status=status.HTTP_204_NO_CONTENT)
