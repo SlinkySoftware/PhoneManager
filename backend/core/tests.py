@@ -132,6 +132,12 @@ class BulkImportApiTests(TestCase):
             [line.directory_number for line in imported_device.get_ordered_lines()],
             ["+11111111111", "+13333333333", "+12222222222"],
         )
+        retrieve_response = self.client.get(reverse("device-detail", args=[imported_device.id]))
+        self.assertEqual(retrieve_response.status_code, 200)
+        self.assertEqual(
+            retrieve_response.json()["lines"],
+            [line.id for line in imported_device.get_ordered_lines()[1:]],
+        )
         self.assertEqual(imported_device.get_decrypted_device_config()["syslog_server"], "10.0.0.5")
         self.assertIn("already exists", payload["devices"]["skipped"][0]["reason"])
         self.assertIn("were not imported successfully", payload["devices"]["skipped"][1]["reason"])

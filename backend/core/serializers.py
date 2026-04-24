@@ -499,6 +499,7 @@ class DeviceSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         """Return device config in API responses with password fields omitted."""
         data = super().to_representation(instance)
+        data['lines'] = [line.id for line in instance.get_ordered_lines()[1:]]
         if instance.device_specific_configuration:
             data['device_specific_configuration'] = self._masked_device_config(instance)
         return data
