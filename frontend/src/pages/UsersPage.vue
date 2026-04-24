@@ -357,7 +357,7 @@
           <p>Are you sure you want to delete user: <strong>{{ userToDelete?.username }}</strong>?</p>
           <p v-if="userToDelete && userToDelete.auth_source !== 'local'" class="text-caption text-info">
             <q-icon name="info" class="q-mr-xs" />
-            This is a {{ getAuthTypeLabel(userToDelete.auth_source) }} user. The account will be deactivated instead of deleted.
+            This is a {{ getAuthTypeLabel(userToDelete.auth_source) }} user. The account will be deleted. If the user attempts to log in again, the account may be recreated if the external identity provider allows it.
           </p>
           <p v-else class="text-caption text-grey-7">This action cannot be undone.</p>
         </q-card-section>

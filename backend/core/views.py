@@ -674,7 +674,7 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     def destroy(self, request, *args, **kwargs):
-        """Delete user or deactivate SSO user."""
+        """Delete a user account."""
         user = self.get_object()
         
         # Prevent deleting yourself
@@ -684,23 +684,13 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Check if externally managed user
+        username = user.username
         profile = getattr(user, 'profile', None)
-        if profile and profile.is_managed_externally:
-            # Deactivate instead of delete (prevents auto-recreate on next external login)
-            user.is_active = False
-            user.save()
-            logger.info("Deactivated %s user: %s", profile.auth_source, user.username)
-            return Response(
-                {'detail': f'{profile.get_auth_source_display()} user deactivated successfully'},
-                status=status.HTTP_200_OK
-            )
-        else:
-            # Delete local user
-            username = user.username
-            user.delete()
-            logger.info(f"Deleted local user: {username}")
-            return Response(status=status.HTTP_204_NO_CONTENT)
+        auth_source = profile.auth_source if profile else UserProfile.AUTH_SOURCE_LOCAL
+
+        user.delete()
+        logger.info("Deleted %s user: %s", auth_source, username)
+        return Response(status=status.HTTP_204_NO_CONTENT)
     
     @action(detail=True, methods=['post'])
     def reset_password(self, request, pk=None):
