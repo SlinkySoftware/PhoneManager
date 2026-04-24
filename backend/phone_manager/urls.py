@@ -28,6 +28,8 @@ urlpatterns = [
     path("api/auth/saml/login/", core_views.saml_login, name="saml_login"),
     path("api/auth/saml/acs/", core_views.saml_acs, name="saml_acs"),
     path("api/auth/saml/metadata/", core_views.saml_metadata, name="saml_metadata"),
+    path("api/imports/template/", core_views.download_bulk_import_template, name="bulk-import-template"),
+    path("api/imports/upload/", core_views.bulk_import_workbook, name="bulk-import-upload"),
     path("api/timezones/", core_views.get_timezones, name="timezones"),
     path("api/", include(router.urls)),
     path("provision/", include("provisioning.urls")),

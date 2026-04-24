@@ -7,6 +7,7 @@ import LoginPage from '../pages/LoginPage.vue';
 import DeviceTypesPage from '../pages/DeviceTypesPage.vue';
 import DevicesPage from '../pages/DevicesPage.vue';
 import DialPlansPage from '../pages/DialPlansPage.vue';
+import ImportsPage from '../pages/ImportsPage.vue';
 import SIPServersPage from '../pages/SIPServersPage.vue';
 import SitesPage from '../pages/SitesPage.vue';
 import LinesPage from '../pages/LinesPage.vue';
@@ -20,6 +21,7 @@ const routes = [
   { path: '/', redirect: '/devices', meta: { requiresAuth: true } },
   { path: '/device-types', component: DeviceTypesPage, meta: { requiresAuth: true } },
   { path: '/devices', component: DevicesPage, meta: { requiresAuth: true } },
+  { path: '/imports', component: ImportsPage, meta: { requiresAuth: true, requiresAdmin: true } },
   { path: '/dial-plans', component: DialPlansPage, meta: { requiresAuth: true } },
   { path: '/sip-servers', component: SIPServersPage, meta: { requiresAuth: true } },
   { path: '/sites', component: SitesPage, meta: { requiresAuth: true } },

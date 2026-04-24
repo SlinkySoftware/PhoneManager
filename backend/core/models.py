@@ -336,6 +336,8 @@ class DeviceTypeConfig(models.Model):
 
 
 class Device(models.Model):
+    LINE_ORDER_KEY = "_line_order"
+
     mac_address = models.CharField(max_length=17, unique=True, validators=[mac_validator])
     description = models.CharField(max_length=255, blank=True)
     device_type_id = models.CharField(max_length=128)
@@ -367,6 +369,42 @@ class Device(models.Model):
 
     def __str__(self) -> str:
         return self.mac_address
+
+    def get_ordered_lines(self) -> list[Line]:
+        """Return the primary line plus any secondary lines in persisted order."""
+        ordered_lines: list[Line] = []
+        seen_line_ids: set[int] = set()
+
+        if self.line_1:
+            ordered_lines.append(self.line_1)
+            seen_line_ids.add(self.line_1.id)
+
+        extra_lines = list(self.lines.all())
+        extra_lines_by_id = {line.id: line for line in extra_lines}
+        requested_order = []
+
+        raw_order = (self.line_configuration or {}).get(self.LINE_ORDER_KEY, [])
+        if isinstance(raw_order, list):
+            for line_id in raw_order:
+                try:
+                    requested_order.append(int(line_id))
+                except (TypeError, ValueError):
+                    continue
+
+        for line_id in requested_order:
+            extra_line = extra_lines_by_id.pop(line_id, None)
+            if not extra_line or extra_line.id in seen_line_ids:
+                continue
+            ordered_lines.append(extra_line)
+            seen_line_ids.add(extra_line.id)
+
+        for extra_line in extra_lines:
+            if extra_line.id in seen_line_ids:
+                continue
+            ordered_lines.append(extra_line)
+            seen_line_ids.add(extra_line.id)
+
+        return ordered_lines
 
     def save(self, *args, **kwargs):
         self.mac_address = normalize_mac(self.mac_address)

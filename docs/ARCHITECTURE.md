@@ -2,25 +2,28 @@
 
 ## System Overview
 
-The Phone Provisioning Manager is a high-availability system for managing and provisioning SIP devices. It follows a stateless, horizontally-scalable architecture with clear separation between configuration management (admin API) and device provisioning (phone endpoints).
+The Phone Provisioning Manager is a high-availability system for managing and provisioning SIP devices. It follows a stateless, horizontally scalable architecture with clear separation between configuration management through the admin API and device provisioning through phone-facing endpoints.
 
 ### Core Principles
-1. **Stateless Backend**: No local file storage; all state persists in database
-2. **Deterministic Rendering**: Same configuration produces same output every time
-3. **Horizontal Scaling**: Multiple backend instances work independently behind a load balancer
-4. **Single Source of Truth**: PostgreSQL/SQLite database holds all configuration
-5. **Security**: Provisioning endpoints are unauthenticated (phones use MAC addresses), admin endpoints require DRF token authentication
+
+1. **Stateless Backend**: No local file storage; all state persists in the database.
+2. **Deterministic Rendering**: The same configuration produces the same output every time.
+3. **Horizontal Scaling**: Multiple backend instances work independently behind a load balancer.
+4. **Single Source of Truth**: PostgreSQL or SQLite holds all configuration state.
+5. **Security**: Provisioning endpoints are intentionally unauthenticated, while admin endpoints require DRF token authentication.
 
 ## Technology Stack
 
 ### Backend
-- **Framework**: Django 6.0.1 + Django REST Framework 3.15+
-- **Database**: PostgreSQL 17 (production) / SQLite 3 (development)
-- **Authentication**: Token-based authentication (DRF tokens)
+
+- **Framework**: Django 6.0.1 and Django REST Framework 3.15+
+- **Database**: PostgreSQL 17 in production, SQLite 3 in development
+- **Authentication**: Token-based authentication with DRF tokens
 - **Python**: 3.10+
-- **Key Libraries**: pytz (timezone support), Pillow (image handling)
+- **Key Libraries**: `pytz` for timezone support and `openpyxl` for bulk XLSX template generation and import parsing
 
 ### Frontend
+
 - **Framework**: Vue 3 with Quasar v2.18
 - **State Management**: Pinia
 - **HTTP Client**: Axios
@@ -28,20 +31,22 @@ The Phone Provisioning Manager is a high-availability system for managing and pr
 - **Node**: 18+
 
 ### Infrastructure
+
 - **Containerization**: Docker Compose
-- **Process Management**: Shell scripts for development, systemd for production
-- **Logging**: File-based (var/logs/)
+- **Process Management**: Shell scripts for development and `systemd` for production
+- **Logging**: File-based logs under `var/logs/`
 
 ## Data Model
 
-```
+```text
 Device
 ├── mac_address (unique, case-insensitive)
 ├── description (CharField, optional)
 ├── device_type_id (CharField)
 ├── site (FK → Site)
 ├── line_1 (FK → Line, primary)
-├── lines (M2M → Line, includes line_1)
+├── lines (M2M → Line, additional lines beyond line_1)
+├── line_configuration (JSON, per-line overrides and imported line order metadata)
 ├── device_specific_configuration (JSON)
 ├── enabled (boolean)
 ├── last_provisioned_at (DateTimeField, optional)
@@ -72,49 +77,50 @@ DialPlanRule
 
 Line
 ├── name
-├── directory_number (unique)
+├── directory_number (import workflows treat as unique; the current model does not enforce DB uniqueness)
 ├── registration_account
 ├── registration_password
-├── phone_label (CharField, optional - display label on phone)
+├── phone_label (CharField, optional display label on phone)
 ├── is_shared (boolean)
 └── timestamps (created, updated)
 
 SIPServer
 ├── name (unique)
-├── host (hostname/IP)
+├── host (hostname or IP)
 ├── port (default 5060)
-├── transport (TCP/UDP/TLS)
+├── transport (TCP, UDP, or TLS)
 └── timestamps (created, updated)
 
 DeviceTypeConfig
-├── type_id (unique, device type identifier)
-├── common_options (JSON schema + saved values)
+├── type_id (unique device type identifier)
+├── common_options (JSON schema plus saved values)
+├── device_defaults (JSON per-device default values copied into new devices)
 └── timestamps (created, updated)
 
 UserProfile
 ├── user (OneToOne → auth.User)
-├── first_name (CharField: User's first name)
-├── last_name (CharField: User's last name)
 ├── role (CharField: 'admin' or 'readonly')
-├── is_sso (BooleanField: SSO vs local authentication)
+├── is_sso (BooleanField: SSO versus local authentication)
+├── auth_source (CharField: local, ldap, or saml)
 ├── force_password_reset (BooleanField: requires password change)
 └── timestamps (created, updated)
 ```
 
-## Authentication & Authorization
+## Authentication And Authorization
 
 ### Authentication Methods
 
-The system supports two authentication methods:
+The system supports these authentication methods:
 
-1. **Local Authentication** - Username/password stored in Django's auth system
-2. **SAML SSO** - Single Sign-On via SAML 2.0 (Microsoft Entra, Okta, etc.)
+1. **Local Authentication**: Username and password stored in Django's auth system.
+2. **LDAP Authentication**: Username and password validated against a central directory.
+3. **SAML SSO**: Single Sign-On via SAML 2.0 for providers such as Microsoft Entra and Okta.
 
 ### Authentication Flow
 
 #### Local Authentication Flow
 
-```
+```text
 User enters credentials → POST /api/auth/login/
     ↓
 Django validates username/password
@@ -123,7 +129,7 @@ Check force_password_reset flag
     ↓ (if true)
 Return token + redirect to /change-password
     ↓ (if false)
-Return token + user profile (username, role, is_sso)
+Return token + user profile
     ↓
 Frontend stores token in localStorage
     ↓
@@ -132,226 +138,239 @@ Frontend includes token in Authorization header for all API calls
 
 #### SAML SSO Flow
 
-```
+```text
 User clicks "Sign in with SSO" → GET /api/auth/saml/login/
     ↓
 Backend generates SAML AuthnRequest
     ↓
-Redirect to IdP login page (Microsoft/Okta)
+Redirect to IdP login page
     ↓
 User authenticates with IdP
     ↓
-IdP POSTs SAML assertion to ACS endpoint → POST /api/auth/saml/acs/
+IdP POSTs SAML assertion to POST /api/auth/saml/acs/
     ↓
-Backend validates SAML assertion
+Backend validates assertion
     ↓
-Extract USER_CLAIM (username) and ADMIN_CLAIM (role)
+Extract USER_CLAIM and ADMIN_CLAIM
     ↓
-Auto-provision/update user in database
+Auto-provision or update user in database
     ↓
 Generate token
     ↓
 Redirect to frontend with token as query parameter
     ↓
-Frontend extracts token and stores in localStorage
+Frontend extracts token and stores it in localStorage
 ```
 
 ### Role-Based Access Control
 
-Two user roles with different permissions:
+Two user roles define API and UI behavior:
 
 | Role | Access Level | UI Behavior | API Enforcement |
-|------|--------------|-------------|------------------|
-| **Admin** | Full CRUD access to all resources | All buttons/forms enabled; Users page accessible; View button shows "Edit" | All HTTP methods allowed on protected endpoints |
-| **Read Only** | View-only access to all resources | Add/Edit/Delete buttons hidden; Users page hidden; Orange "Read Only Mode" badge shown; View button with eye icon allows viewing disabled forms | Only GET/HEAD/OPTIONS allowed; POST/PUT/PATCH/DELETE return 403 Forbidden |
+| ---- | ------------ | ----------- | --------------- |
+| **Admin** | Full CRUD access to all resources | All forms and action buttons enabled; Users and Imports pages accessible | All protected HTTP methods allowed |
+| **Read Only** | View-only access to all resources | Add, edit, delete, and import actions hidden or disabled; orange Read Only badge shown | Only `GET`, `HEAD`, and `OPTIONS` allowed |
 
 #### Read-Only Viewing Mode
 
-Read-only users can view complete configuration details through a "View" mode:
-- **View Button**: Eye icon replaces Edit button for read-only users
-- **Dialog Title**: Shows "View" instead of "Edit" when opened by read-only user
-- **All Fields Disabled**: Form inputs are visible but cannot be modified (greyed out)
-- **No Save Button**: Only "Close" button is available, not "Save"
-- **Applies To**: All data pages (Devices, Lines, Sites, SIP Servers, Device Types)
-- **Includes**: Device-specific configuration options and ordered multi-select fields
+Read-only users can still inspect full configuration data through a dedicated view mode.
+
+- **View Button**: An eye icon replaces the edit button.
+- **Dialog Title**: Forms show `View` instead of `Edit`.
+- **All Fields Disabled**: Inputs remain visible but cannot be changed.
+- **No Save Button**: The dialog exposes only `Close`.
+- **Applies To**: Devices, Lines, Sites, SIP Servers, and Device Types.
 
 ### Password Security
 
-Password fields implement security best practices:
-- **Blank on View**: When editing existing records, password fields show placeholder "••••••••" instead of actual values
-- **Change Detection**: System tracks if password field has been modified
-- **Visual Indicators**: Orange warning icon and "Password will be changed" message when modification detected
-- **Conditional Updates**: API only updates passwords if user entered new value
-- **Helper Text**: Shows "Leave blank to keep current password" for existing records
-- **Applies To**: Lines (registration_password), Devices (device-specific password fields)
+Password-bearing fields implement a consistent update pattern.
 
-### Role-Based Access Control
-
-Two user roles with different permissions:
-
-| Role | Access Level | UI Behavior | API Enforcement |
-|------|--------------|-------------|-----------------|
-| **Admin** | Full CRUD access to all resources | All buttons/forms enabled; Users page accessible | All HTTP methods allowed on protected endpoints |
-| **Read Only** | View-only access to all resources | Add/Edit/Delete buttons hidden; Users page hidden; Orange "Read Only Mode" badge shown | Only GET/HEAD/OPTIONS allowed; POST/PUT/PATCH/DELETE return 403 Forbidden |
+- **Blank on View**: Existing passwords display as placeholders such as `••••••••`.
+- **Change Detection**: The UI tracks whether the password field was modified.
+- **Visual Indicators**: A warning icon and helper message appear when a password will change.
+- **Conditional Updates**: The API only writes password fields if the user provided a new value.
+- **Applies To**: Line `registration_password` and device-specific password options.
 
 ### Permission Classes
 
-**IsAuthenticated** - Requires valid token (both roles can access)
-- Used for: Read endpoints (GET)
+#### IsAuthenticated
 
-**IsAdmin** - Requires role='admin'
-- Used for: User management page, admin-only actions
+- Requires a valid token.
+- Used for authenticated read access.
 
-**IsAdminOrReadOnly** - Allows read for all authenticated users, write only for admins
-- Used for: All resource ViewSets (Devices, Lines, Sites, SIPServers, DeviceTypeConfig)
-- Implementation:
-  ```python
-  def has_permission(self, request, view):
-      if not request.user.is_authenticated:
-          return False
-      if request.method in SAFE_METHODS:  # GET, HEAD, OPTIONS
-          return True
-      return request.user.profile.role == 'admin'
-  ```
+#### IsAdmin
+
+- Requires `role='admin'`.
+- Used for admin-only pages and actions such as user management and bulk import.
+
+#### IsAdminOrReadOnly
+
+- Allows read for all authenticated users and write only for admins.
+- Used by resource ViewSets such as Devices, Lines, Sites, SIP Servers, Dial Plans, and Device Type Config.
+
+Implementation pattern:
+
+```python
+def has_permission(self, request, view):
+    if not request.user.is_authenticated:
+        return False
+    if request.method in SAFE_METHODS:
+        return True
+    return request.user.profile.role == 'admin'
+```
 
 ### User Management
 
-**Admin-Only Capabilities:**
-- Create new local users (generates 16-character temporary password)
-- Edit existing users (change full name, email, role, force password reset)
-- Reset user passwords (generates new temporary password)
-- Delete/deactivate users (SSO users are deactivated, local users are deleted)
-- View all users with role and authentication type
-- **Self-Protection**: Cannot edit, reset password, or delete own account
+#### Admin-only capabilities
 
-**All Users:**
-- Change their own password (local users only)
-- View their account information
-- See "You" chip next to their username in Users table
+- Create new local users and generate temporary passwords.
+- Edit user details such as name, email, role, and force-password-reset state.
+- Reset local-user passwords.
+- Delete local users or deactivate externally managed users.
+- View all users with role and authentication source.
+- Prevent self-modification for destructive or privilege-changing actions.
 
-**User Interface Features:**
-- Full Name field (first_name + last_name) displayed in user listings
-- Edit User dialog for updating user details without changing password
-- Force Password Reset checkbox (requires password change on next login)
-- "You" chip indicator for current user in table
-- Orange badges for "Local" and "Read Only" designations
-- Action buttons hidden for current user (prevents self-modification)
+#### All users
 
-**Temporary Password System:**
-- New users receive a temporary password (displayed once)
-- `force_password_reset` flag set to `true`
-- On first login, user redirected to `/change-password`
-- Must enter old password + new password (min 8 chars)
-- After successful change, `force_password_reset` set to `false`
+- Change their own password if they are locally managed.
+- View their own account details.
+- See a `You` marker beside their row in the Users table.
+
+#### Temporary password system
+
+- New users receive a generated temporary password displayed once.
+- `force_password_reset` is set to `true`.
+- On first login, the user is redirected to `/change-password`.
+- After a successful password change, `force_password_reset` is set to `false`.
 
 ### SSO User Auto-Provisioning
 
 When a user authenticates via SAML:
 
-1. **Extract Claims:**
-   - `USER_CLAIM` → Username (e.g., "john.doe@example.com")
-   - `ADMIN_CLAIM` → Group membership or role claim
-
-2. **Determine Role:**
-   - If `ADMIN_VALUE` in user's claims → role='admin'
-   - Otherwise → role='readonly'
-
-3. **Create/Update User:**
-   - Check if user exists (by username)
-   - If new: Create User + UserProfile with is_sso=True
-   - If existing: Update role if changed
-   - No password required (SSO users can't use local login)
-
-4. **Generate Token:**
-   - Create Django Token for API authentication
-   - Return token to frontend
+1. Extract claims.
+   - `USER_CLAIM` supplies the username, for example `john.doe@example.com`.
+   - `ADMIN_CLAIM` supplies role or group data.
+2. Determine role.
+   - If `ADMIN_VALUE` is present, assign `admin`.
+   - Otherwise assign `readonly`.
+3. Create or update the local user record.
+   - If the user is new, create `User` and `UserProfile`.
+   - If the user already exists, update the role when required.
+4. Generate a Django token and return control to the frontend.
 
 ### API Security
 
-**Protected Endpoints:**
-- All `/api/*` endpoints except `/api/auth/login/`, `/api/auth/config/`, `/api/auth/saml/*`
-- Require `Authorization: Token <token>` header
-- Token validated against database
+#### Protected endpoints
 
-**Provisioning Endpoints:**
-- `/provision/<MAC>` is **intentionally unauthenticated** (phones use MAC address for identification)
-- Additional filename formats are accepted for vendor compatibility:
-    - `/provision/<MAC>.cfg`
-    - `/provision/<MAC>-phone.cfg`
-    - `/provision/cfg<MAC>.xml`
+- All `/api/*` endpoints except the public auth endpoints require `Authorization: Token <token>`.
+- The token is validated against the database.
 
-**CORS Configuration:**
-- Whitelist frontend origin only
-- Credentials allowed for authenticated requests
+#### Provisioning endpoints
+
+- `/provision/<MAC>` is intentionally unauthenticated because phones identify by MAC address.
+- Additional vendor-compatibility URL formats are accepted:
+  - `/provision/<MAC>.cfg`
+  - `/provision/<MAC>-phone.cfg`
+  - `/provision/cfg<MAC>.xml`
+
+#### CORS configuration
+
+- Only the frontend origin should be allowed.
+- Authenticated requests may include credentials where needed.
 
 ## API Architecture
 
 ### REST API Endpoints
 
-**Authentication** (Public)
-- `POST /api/auth/login/` - Exchange credentials for token
-- `GET /api/auth/config/` - Get SSO configuration status
-- `GET /api/auth/saml/login/` - Initiate SAML login flow
-- `POST /api/auth/saml/acs/` - SAML Assertion Consumer Service (IdP callback)
-- `GET /api/auth/saml/metadata/` - Service Provider metadata XML
+#### Authentication (public)
 
-**User Management** (Requires Admin Role)
-- `GET /api/users/` - List all users
-- `POST /api/users/` - Create new local user
-- `DELETE /api/users/{id}/` - Delete local user or deactivate SSO user
-- `POST /api/users/{id}/reset_password/` - Reset user password
+- `POST /api/auth/login/`: Exchange credentials for a token.
+- `POST /api/auth/ldap/login/`: Exchange LDAP credentials for a token.
+- `GET /api/auth/config/`: Retrieve authentication configuration.
+- `GET /api/auth/saml/login/`: Initiate SAML login.
+- `POST /api/auth/saml/acs/`: SAML Assertion Consumer Service callback.
+- `GET /api/auth/saml/metadata/`: Return SP metadata XML.
 
-**Password Management** (Requires Authentication)
-- `POST /api/auth/change-password/` - Change own password (local users only)
+#### User management (admin only)
 
-**Admin APIs** (Requires Authentication, Write requires Admin Role)
-- `GET/POST /api/devices/` - List/create devices
-- `GET/PUT/DELETE /api/devices/{id}/` - Retrieve/update/delete device
-- `GET/POST /api/lines/` - Manage phone lines
-- `GET/POST /api/sites/` - Manage sites
-- `GET/POST /api/sip-servers/` - Manage SIP servers
-- `GET/PUT /api/device-type-config/{type_id}/` - Manage device type configurations
+- `GET /api/users/`: List users.
+- `POST /api/users/`: Create a local user.
+- `DELETE /api/users/{id}/`: Delete or deactivate a user.
+- `POST /api/users/{id}/reset_password/`: Reset a local-user password.
+- `GET /api/imports/template/`: Download the bulk import workbook template.
+- `POST /api/imports/upload/`: Upload a populated workbook for line and device creation.
 
-**Provisioning Endpoints** (Public, unauthenticated)
-- `GET /provision/<MAC>` - Returns device configuration file
-- `GET /provision/<MAC>.cfg` - Vendor compatibility format
-- `GET /provision/<MAC>-phone.cfg` - Polycom-style format
-- `GET /provision/cfg<MAC>.xml` - XML provisioning format
-- `GET /api/device-types/` - List available device types with options
+#### Password management (authenticated)
 
-**Utility Endpoints** (Public)
-- `GET /api/timezones/` - List all timezones with UTC offsets
+- `POST /api/auth/change-password/`: Change the current user's password when locally managed.
+
+#### Admin APIs (authenticated, write requires admin)
+
+- `GET/POST /api/devices/`: List or create devices.
+- `GET/PUT/DELETE /api/devices/{id}/`: Retrieve, update, or delete a device.
+- `GET/POST /api/lines/`: List or create lines.
+- `GET/POST /api/sites/`: List or create sites.
+- `GET/POST /api/sip-servers/`: List or create SIP servers.
+- `GET/POST /api/dial-plans/`: List or create dial plans.
+- `GET/PUT /api/device-type-config/{type_id}/`: Manage device type configuration.
+
+#### Provisioning endpoints (public)
+
+- `GET /provision/<MAC>`: Return the rendered device configuration.
+- `GET /provision/<MAC>.cfg`: Vendor compatibility format.
+- `GET /provision/<MAC>-phone.cfg`: Polycom-style format.
+- `GET /provision/cfg<MAC>.xml`: XML provisioning format.
+- `GET /api/device-types/`: List available device types and option schemas.
+
+#### Utility endpoints (public)
+
+- `GET /api/timezones/`: List supported timezones with UTC offsets.
+
+### Bulk Import Flow
+
+The bulk import feature provides an admin-only onboarding path for batched line and device creation.
+
+1. The frontend downloads a generated `.xlsx` template from `GET /api/imports/template/`.
+2. The administrator populates the `Devices` and `Lines` sheets.
+3. The frontend uploads the workbook with `POST /api/imports/upload/` as `multipart/form-data`.
+4. The backend validates workbook structure, headers, row counts, and file size.
+5. Line rows are validated and created first.
+6. Device rows are validated against normalized MAC uniqueness, known Sites, known device `TypeID` values, line references from the same workbook, and per-model line capacity.
+7. Each imported device is seeded from `DeviceTypeConfig.device_defaults`.
+8. The backend returns imported and skipped counts plus row-level reasons for any skipped rows.
+
+This flow is intentionally partial-success. Invalid rows are skipped instead of aborting the entire workbook.
 
 ### Device Rendering Pipeline
 
-1. **Device Request**: Phone requests config with MAC address
-2. **Lookup**: Backend finds device by MAC in database
-3. **Validation**: Check if device is enabled and assigned to site
-4. **Renderer Selection**: Look up device type and load renderer class
+1. **Device Request**: A phone requests its configuration using a MAC address.
+2. **Lookup**: The backend finds the device by MAC address.
+3. **Validation**: The backend checks whether the device is enabled and supports the requested provisioning path.
+4. **Renderer Selection**: The backend resolves the renderer class from the device `TypeID`.
 5. **Configuration Generation**:
-   - Load site configuration (SIP servers, NTP servers, timezone)
-   - Load device-specific configuration (user-entered options)
-   - Load assigned lines
-   - Call renderer's `render()` method with all data
-6. **Response**: Return deterministically-generated configuration file
+   - Load site configuration such as SIP servers, NTP servers, and timezone.
+   - Load merged device-specific configuration.
+   - Load assigned lines in their effective order.
+   - Call the renderer's `render()` method.
+6. **Response**: Return deterministically generated configuration text using the renderer's declared content type.
 
 ### Device Type System
 
-Device types are Python classes implementing a common interface:
+Device types are Python classes implementing a common interface.
 
 ```python
 class DeviceType:
-    TypeID = "VendorModel"           # Unique identifier
-    Manufacturer = "Vendor"           # Display name
-    Model = "Model X"                 # Display model
-    NumberOfLines = 4                 # Max concurrent calls
-    ContentType = "text/xml"          # HTTP Content-Type (text/plain, application/xml, etc.)
-    UserAgentPatterns = (             # User-Agent regex patterns for device detection
+    TypeID = "VendorModel"
+    Manufacturer = "Vendor"
+    Model = "Model X"
+    NumberOfLines = 4
+    ContentType = "text/xml"
+    UserAgentPatterns = (
         r"VendorPattern1",
-        r"VendorPattern2"
+        r"VendorPattern2",
     )
-    
-    CommonOptions = {                 # User-configurable options (apply to all instances)
+
+    CommonOptions = {
         "sections": [
             {
                 "friendlyName": "SIP Settings",
@@ -363,186 +382,196 @@ class DeviceType:
                         "default": "",
                         "mandatory": True,
                         "type": "text",
-                        "uiOrder": 1
+                        "uiOrder": 1,
                     }
-                ]
+                ],
             }
         ]
     }
-    
-    DeviceSpecificOptions = {         # Device-specific options (per-device overrides)
-        "sections": [...]
-    }
-    
+
+    DeviceSpecificOptions = {"sections": [...]} 
+
     def render(self, device: Device) -> str:
-        """Generate configuration file content.
-        
-        Access site config, lines, and device options via device object.
-        Return deterministic output matching ContentType.
-        """
-        # Merge common_options with device_specific_configuration
         config = device.get_decrypted_device_config()
-        
-        # Build device config using device.site, device.lines, config dict
         output = ""
-        # ... rendering logic
         return output
 ```
 
 ## Frontend Architecture
 
 ### Page Structure
-- **Pages**: Route components (Devices, Lines, Sites, Dial Plans, Device Types, Users, Change Password, User Settings)
-- **Components**: Reusable UI elements (tables, dialogs, forms)
-- **Stores**: Pinia stores for auth state and session
-- **Services**: API client modules with Axios
-- **Default Landing Page**: Devices page after login
+
+- **Pages**: Devices, Lines, Imports, Sites, Dial Plans, Device Types, Users, Change Password, and User Settings.
+- **Components**: Reusable tables, dialogs, and forms.
+- **Stores**: Pinia stores for auth state and session persistence.
+- **Services**: Axios-based API client modules.
+- **Default Landing Page**: Devices after successful login.
 
 ### Dial Plans Page
+
 The Dial Plans page allows administrators to:
-- Create named dial plans with ordered transformation rules
-- Configure input/output regex pairs for phone number transformations
-- Apply dial plans to sites (used during device provisioning)
-- Renderers convert standard regex format to device-specific syntax (Polycom digitmap, Grandstream dialplan, Yealink <rule>)
+
+- Create named dial plans with ordered transformation rules.
+- Configure input and output regex pairs for phone number transformations.
+- Apply dial plans to sites during provisioning.
+- Test renderer-specific conversions of dial plan logic.
 
 ### Table Features
-- **Pagination**: Default 20 items per page
-- **Per-Page Options**: 20, 50, 100, All
-- **Sortable Columns**: Click headers to sort
-- **Loading States**: Progress indicators during data fetch
-- **Action Buttons**: Context-aware based on user role (Edit/View/Clone/Delete)
-- **Row Selection**: Unique ID-based selection
-- **Clone Operation**: Duplicate device configurations with shared line preservation and doNotClone flag support
+
+- **Pagination**: Default 20 items per page.
+- **Per-Page Options**: 20, 50, 100, or All.
+- **Sortable Columns**: Click headers to sort.
+- **Loading States**: Progress indicators during data fetch.
+- **Action Buttons**: Context-aware actions such as Edit, View, Clone, and Delete.
+- **Clone Operation**: Duplicate device configurations with shared-line preservation and `doNotClone` handling.
 
 ### Form Patterns
-- Real-time validation with error messages
-- Change detection to prevent unintended data loss
-- Confirmation dialogs for destructive operations
-- Proper error extraction and display
-- Loading states during async operations
-- **Password Security**: Blank placeholder fields ("••••••••"), change tracking with visual warnings
-- **Read-Only Mode**: Disabled fields, "View" title, no Save button, Close instead of Cancel
 
-### UI/UX Conventions
+- Real-time validation with error messages.
+- Change detection to prevent unintended data loss.
+- Confirmation dialogs for destructive operations.
+- Consistent backend error extraction and display.
+- Loading states during asynchronous operations.
+- **Password Security**: Blank placeholder fields, change tracking, and warning indicators.
+- **Read-Only Mode**: Disabled fields, `View` title, no Save button, and Close instead of Cancel.
+- **Bulk Upload Summary**: The Imports page shows imported counts, skipped counts, and row-level failure reasons.
+
+### UI And UX Conventions
+
 - **Color Coding**:
-  - Primary (blue): Admin role, primary actions
-  - Orange: Read Only role, Local auth type, password change warnings
-  - Info (cyan): SSO auth type, "You" chip for current user
-  - Teal/Green: Device configuration sections, success states
-  - Negative (red): Delete actions, error messages
-- **User Identification**: "You" chip displayed next to current user's username
-- **Self-Protection**: Current user cannot modify their own account (no Edit/Reset/Delete buttons)
-- **Role Indicators**: Badges show Administrator/Read Only and SSO/Local
+  - Primary blue for main actions and admin affordances.
+  - Orange for read-only state, local auth labels, and password warnings.
+  - Info cyan for SSO indicators and the `You` marker.
+  - Teal or green for configuration sections and success states.
+  - Negative red for destructive actions and error banners.
+- **User Identification**: A `You` chip marks the current user.
+- **Self-Protection**: The current user cannot edit, reset, or delete their own account.
+- **Role Indicators**: Badges distinguish Administrator, Read Only, Local, LDAP, and SSO states.
 
 ### State Management
-- **Auth Store**: Token, user info, login/logout
-- **Session**: localStorage persistence of token
-- **Data**: Fetch on-demand (no duplication in stores)
+
+- **Auth Store**: Holds token, user metadata, and login or logout actions.
+- **Session**: Persists auth state in `localStorage`.
+- **Data Fetching**: Resource data is fetched on demand rather than duplicated in stores.
 
 ## Deployment Architecture
 
 ### Development
-- `manage-services.sh` script starts both services
-- Django runserver for backend
-- Vite dev server for frontend
-- SQLite database for simplicity
+
+- `manage-services.sh` starts both services.
+- Django `runserver` serves the backend.
+- Vite serves the frontend.
+- SQLite is used by default for local simplicity.
 
 ### Docker Compose
-- Three containers: backend, frontend, PostgreSQL
-- Environment-driven configuration
-- Volume mounts for data persistence
-- Network bridge for service communication
+
+- Three main containers: backend, frontend, and PostgreSQL.
+- Environment-driven configuration.
+- Volume mounts for persistent state.
+- Private network bridge for service communication.
 
 ### Production (Bare Metal)
-- systemd service for backend (gunicorn + PostgreSQL)
-- systemd service for frontend (Node.js or served by nginx)
-- Load balancer (nginx/HAProxy) terminating TLS
-- Separate database server with backups
-- Log aggregation from var/logs/
+
+- `systemd` service for backend application processes.
+- Frontend served via Node.js or nginx depending on deployment strategy.
+- TLS termination at a load balancer such as nginx or HAProxy.
+- Dedicated database host or managed service with backups.
+- Centralized or file-based log aggregation.
 
 ## Security Considerations
 
 ### Encryption
-- **Fernet Symmetric Encryption**: Uses AES 128 CBC with HMAC for reversible encryption
-- **Password Storage**: Line `registration_password` fields encrypted in database using `EncryptionManager`
-- **Decryption at Render**: Passwords decrypted only when generating device configurations via `get_decrypted_device_config()`
-- **Encryption Key**: Configured via `ENCRYPTION_KEY` environment variable or `config.yaml`; defaults to insecure key in development
+
+- **Fernet Symmetric Encryption**: Reversible encryption for stored credentials where provisioning needs plaintext at render time.
+- **Password Storage**: Line registration passwords are encrypted in the database.
+- **Decryption at Render**: Passwords are decrypted only when device configuration is generated.
+- **Encryption Key**: Configured through `ENCRYPTION_KEY` or application config; development defaults must not be used in production.
 
 ### Provisioning Endpoint Security
-- **Intentionally unauthenticated**: Phones cannot handle OAuth
-- **MAC-based identification**: Device identified by MAC address
-- **User-Agent Validation**: Device types specify `UserAgentPatterns` regex to detect device models from provisioning requests
-- **Logging**: User-Agent mismatches and provisioning errors are logged in backend logs
-- **Rate limiting**: Recommended at load balancer level
-- **Error masking**: Generic 404/403 to prevent info leakage
+
+- **Intentionally unauthenticated**: Phones cannot handle OAuth-style flows.
+- **MAC-based identification**: Devices are identified by MAC address.
+- **User-Agent Validation**: Device types can require expected provisioning request patterns.
+- **Logging**: User-Agent mismatches and provisioning errors are logged.
+- **Rate Limiting**: Recommended at the load balancer layer.
+- **Error Masking**: Generic 404 or 403 responses reduce information leakage.
 
 ### Admin API Security
-- **Token authentication**: Required for all write operations
-- **CORS whitelist**: Only frontend origin allowed
-- **HTTPS required**: Use TLS termination at load balancer
-- **Password hashing**: Django's PBKDF2 hasher for auth
-- **Environment variables**: Secrets in .env, never committed
+
+- **Token Authentication**: Required for protected write operations.
+- **CORS Whitelist**: Only the intended frontend origin should be allowed.
+- **HTTPS Required**: TLS termination should be enforced in front of the application.
+- **Password Hashing**: Django's password hashing protects auth credentials.
+- **Environment Variables**: Secrets live outside the repository.
 
 ## High Availability
 
-### Stateless Design Enables:
-- Add/remove backend instances without coordination
-- Load balancer can route requests to any instance
-- Database is single point of consistency (not availability)
-- Caching feasible since config is deterministic
+### Stateless Design Enables
+
+- Adding or removing backend instances without coordination.
+- Routing requests to any healthy backend instance.
+- Deterministic regeneration of configuration from the database.
+- Horizontal scaling without shared local storage.
 
 ### Scaling Considerations
-- **Vertical**: Increase server resources
-- **Horizontal**: Add backend instances behind load balancer
-- **Database**: PostgreSQL replication for HA
-- **Caching**: Frontend caching of device configs possible
-- **CDN**: Configuration files could be served from CDN
+
+- **Vertical Scaling**: Increase server resources.
+- **Horizontal Scaling**: Add backend instances behind a load balancer.
+- **Database HA**: Use PostgreSQL replication or a managed HA offering.
+- **Caching**: Safe where derived data remains deterministic.
+- **CDN**: Static frontend assets are good CDN candidates.
 
 ## Extensibility
 
 ### Supported Device Types
-- **Yealink SIP-T33G**: IP phone with 4 lines (see [docs/YEALINK_SIP_T33G_RENDERER.md](YEALINK_SIP_T33G_RENDERER.md))
-- **Yealink W70B DECT**: DECT base station with DECT handsets
-- **Polycom SoundPoint IP650**: IP phone with 6 lines (see [docs/POLYCOM_SOUNDPOINT_IP650_RENDERER.md](POLYCOM_SOUNDPOINT_IP650_RENDERER.md))
-- **Grandstream HT812**: ATA gateway with 2 FXS ports (see [docs/GRANDSTREAM_HT812_RENDERER.md](GRANDSTREAM_HT812_RENDERER.md))
-- **Example SIP Phone**: Reference implementation
+
+- **Yealink SIP-T33G**: IP phone with 4 lines. See [YEALINK_SIP_T33G_RENDERER.md](YEALINK_SIP_T33G_RENDERER.md).
+- **Yealink W70B DECT**: DECT base station with DECT handsets.
+- **Polycom SoundPoint IP650**: IP phone with 6 lines. See [POLYCOM_SOUNDPOINT_IP650_RENDERER.md](POLYCOM_SOUNDPOINT_IP650_RENDERER.md).
+- **Grandstream HT812**: ATA gateway with 2 FXS ports. See [GRANDSTREAM_HT812_RENDERER.md](GRANDSTREAM_HT812_RENDERER.md).
+- **Example SIP Phone**: Reference implementation.
 
 ### Adding Device Types
-1. Create renderer class in `backend/provisioning/device_types/`
-2. Define `TypeID`, `Manufacturer`, `Model`, `NumberOfLines`, `ContentType`
-3. Define `UserAgentPatterns` regex list for device detection
-4. Define `CommonOptions` and `DeviceSpecificOptions` schemas
-5. Implement `render()` method to generate device configuration
-6. Register in `backend/provisioning/registry.py` and `RendererFactory.RENDERERS`
-7. UI automatically discovers and displays device type
+
+1. Create a renderer class in `backend/provisioning/device_types/`.
+2. Define `TypeID`, `Manufacturer`, `Model`, `NumberOfLines`, and `ContentType`.
+3. Define `UserAgentPatterns` for provisioning validation.
+4. Define `CommonOptions` and `DeviceSpecificOptions` schemas.
+5. Implement `render()`.
+6. Register the device type in `backend/provisioning/registry.py`.
+7. Let the UI discover the new type automatically through the device-type API.
 
 ### Adding API Endpoints
-1. Create/update model in `backend/core/models.py`
-2. Create serializer in `backend/core/serializers.py`
-3. Create viewset in `backend/core/views.py`
-4. Register in router in `backend/phone_manager/urls.py`
-5. Create frontend service in `frontend/src/services/`
-6. Frontend UI automatically works with new endpoint
 
-## Monitoring & Logging
+1. Create or update the model in `backend/core/models.py`.
+2. Create or update the serializer in `backend/core/serializers.py`.
+3. Create the view or viewset in `backend/core/views.py`.
+4. Register it in `backend/phone_manager/urls.py`.
+5. Create the frontend service under `frontend/src/services/`.
+6. Wire the frontend page or component that consumes it.
+
+## Monitoring And Logging
 
 ### Backend Logging
-- All requests logged to var/logs/backend.log
-- Provisioning errors and User-Agent mismatches logged with MAC and device type
-- Failed authentication/authorization logged
-- Database errors logged with context
+
+- Requests are logged to backend log files.
+- Provisioning mismatches and failures include device context where available.
+- Failed authentication and authorization attempts are logged.
+- Database and validation failures are logged with operational context.
 
 ### Frontend Logging
-- Browser console errors captured
-- API errors displayed to user
-- Service worker logs for offline capability (future)
+
+- Browser console errors remain available during development.
+- API errors are surfaced to the user in the UI.
+- Additional offline or service-worker logging is future work.
 
 ## Documentation Structure
 
-- **ARCHITECTURE.md**: This file - system design and flow
-- **AUTHENTICATION.md**: Login flow and token management
-- **DEPLOYMENT.md**: Production deployment checklist (includes SSO setup)
-- **SSO_SETUP.md**: Comprehensive SAML SSO configuration guide
-- **FRONTEND_GUIDELINES.md**: UI development patterns
-- **DEVICE_TYPE_OPTIONS.md**: Configuration schema system
-- **.github/copilot-instructions.md**: Development standards
+- **BULK_IMPORTS.md**: Workbook template, endpoint contract, and import rules.
+- **ARCHITECTURE.md**: System design and runtime behavior.
+- **AUTHENTICATION.md**: Login flow and token handling.
+- **DEPLOYMENT.md**: Deployment and operational setup.
+- **SSO_SETUP.md**: SAML configuration guidance.
+- **FRONTEND_GUIDELINES.md**: UI development patterns.
+- **DEVICE_TYPE_OPTIONS.md**: Configuration schema system.
+- **.github/copilot-instructions.md**: Development standards.

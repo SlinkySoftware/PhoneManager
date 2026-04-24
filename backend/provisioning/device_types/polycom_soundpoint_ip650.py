@@ -630,16 +630,7 @@ class PolycomSoundPointIP650(DeviceType):
         # Get configuration values (decrypt password fields)
         config = device.get_decrypted_device_config()
         site = device.site
-        lines = []
-        seen_line_ids = set()
-        if device.line_1:
-            lines.append(device.line_1)
-            seen_line_ids.add(device.line_1.id)
-        for extra_line in device.lines.all().order_by("directory_number"):
-            if extra_line.id in seen_line_ids:
-                continue
-            lines.append(extra_line)
-            seen_line_ids.add(extra_line.id)
+        lines = device.get_ordered_lines()
         
         # Get common options
         clock_24hour = config.get("clock_24hour", True)

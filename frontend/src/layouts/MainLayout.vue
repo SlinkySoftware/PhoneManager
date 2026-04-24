@@ -8,6 +8,7 @@
         <q-tabs shrink stretch class="text-white">
           <q-route-tab to="/devices" label="Devices" icon="devices" />
           <q-route-tab to="/lines" label="Lines" icon="call" />
+          <q-route-tab v-if="isAdmin" to="/imports" label="Imports" icon="upload_file" />
           <q-route-tab to="/device-types" label="Device Types" icon="schema" />
           <q-route-tab to="/sip-servers" label="SIP Servers" icon="router" />
           <q-route-tab to="/dial-plans" label="Dial Plans" icon="transform" />

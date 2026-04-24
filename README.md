@@ -83,6 +83,7 @@ Backend API will be available at http://localhost:8000/api
 ## Key Features
 
 - **Device Management**: CRUD operations for SIP devices with flexible provisioning
+- **Bulk XLSX Import**: Admin-only workbook import for batched line and device creation with row-level summaries
 - **Clone Device**: Rapid device provisioning by cloning existing configurations with intelligent line handling
 - **Site & Line Management**: Organize devices into sites with multi-line support
 - **Authentication**: Token-based authentication with Local, LDAP, and SAML SSO support
@@ -99,6 +100,7 @@ Backend API will be available at http://localhost:8000/api
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) - System design and data model
+- [Bulk XLSX Imports](docs/BULK_IMPORTS.md) - Template format, validation rules, and import behavior
 - [Authentication](docs/AUTHENTICATION.md) - Login and token management
 - [LDAP Setup](docs/LDAP_SETUP.md) - Central authentication configuration and rollout
 - [Deployment](docs/DEPLOYMENT.md) - Production deployment guide

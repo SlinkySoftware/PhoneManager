@@ -1287,14 +1287,7 @@ class YealinkW70BDECT(DeviceType):
 
 
         # Collect lines (line_1 + additional lines)
-        lines: List[Any] = []
-        if device.line_1:
-            lines.append(device.line_1)
-        extra_lines = list(getattr(device, "lines").all()) if hasattr(device, "lines") else []
-        for ln in extra_lines:
-            if device.line_1 and ln.id == device.line_1.id:
-                continue
-            lines.append(ln)
+        lines = list(device.get_ordered_lines())
         lines = lines[: self.NumberOfLines]
 
 

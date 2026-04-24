@@ -162,18 +162,7 @@ class DeviceSerializer(serializers.ModelSerializer):
         ]
 
     def get_line_directory_numbers(self, obj):
-        numbers = []
-        seen = set()
-        if obj.line_1:
-            if obj.line_1.directory_number not in seen:
-                numbers.append(obj.line_1.directory_number)
-                seen.add(obj.line_1.directory_number)
-        for line in obj.lines.all().order_by("directory_number"):
-            if line.directory_number in seen:
-                continue
-            numbers.append(line.directory_number)
-            seen.add(line.directory_number)
-        return numbers
+        return [line.directory_number for line in obj.get_ordered_lines()]
 
     def validate_mac_address(self, value):
         normalized = normalize_mac(value)
@@ -316,21 +305,25 @@ class DeviceSerializer(serializers.ModelSerializer):
                 cleaned_lines = cleaned_lines[: max_lines - 1]
             attrs["lines"] = cleaned_lines
         elif instance:
-            # Trim existing lines if type changed or exceeds max
-            existing = list(instance.lines.all())
+            # Trim existing lines if type changed or exceeds max.
+            existing = list(instance.get_ordered_lines()[1:])
             if len(existing) > max_lines - 1:
                 attrs["lines"] = existing[: max_lines - 1]
-            for line in existing[: max_lines - 1]:
-                line_id = line.id if isinstance(line, Line) else line
-                line_ids.append(line_id)
-                if isinstance(line, Line):
-                    line_objects[line_id] = line
-            if len(existing) <= max_lines - 1:
-                for line in existing:
-                    line_id = line.id if isinstance(line, Line) else line
-                    line_ids.append(line_id)
-                    if isinstance(line, Line):
-                        line_objects[line_id] = line
+
+        line_ids = [line_1_id]
+        final_lines = attrs.get("lines", None)
+        if final_lines is None and instance:
+            final_lines = list(instance.get_ordered_lines()[1:])
+
+        for line in final_lines or []:
+            line_id = line.id if isinstance(line, Line) else line
+            if line_id is None:
+                continue
+            line_ids.append(line_id)
+            if isinstance(line, Line):
+                line_objects[line_id] = line
+
+        line_order_ids = [line_id for line_id in line_ids if line_id != line_1_id]
 
         # Enforce non-shared line exclusivity across devices
         for db_line in Line.objects.filter(id__in=line_ids):
@@ -353,11 +346,19 @@ class DeviceSerializer(serializers.ModelSerializer):
 
         if not supports_per_line_sip:
             attrs["line_configuration"] = {}
+            if line_order_ids:
+                attrs["line_configuration"][Device.LINE_ORDER_KEY] = line_order_ids
         else:
             if raw_line_config is None:
                 raw_line_config = {}
             if not isinstance(raw_line_config, dict):
                 raise serializers.ValidationError({"line_configuration": "Line configuration must be an object"})
+
+            raw_line_config = {
+                key: value
+                for key, value in raw_line_config.items()
+                if key != Device.LINE_ORDER_KEY
+            }
 
             cleaned_line_config = {}
             sip_server_cache = {}
@@ -416,6 +417,9 @@ class DeviceSerializer(serializers.ModelSerializer):
                     cleaned_entry["secondary_sip_server"] = secondary_server.id
 
                 cleaned_line_config[str(line_number)] = cleaned_entry
+
+            if line_order_ids:
+                cleaned_line_config[Device.LINE_ORDER_KEY] = line_order_ids
 
             attrs["line_configuration"] = cleaned_line_config
 

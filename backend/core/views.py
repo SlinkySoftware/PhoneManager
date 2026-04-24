@@ -12,12 +12,14 @@ from django.db.models import ProtectedError
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
-from rest_framework import permissions, status, viewsets
+from rest_framework import permissions, serializers, status, viewsets
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.authtoken.models import Token
-from rest_framework.decorators import api_view, permission_classes, action
+from rest_framework.decorators import api_view, permission_classes, action, parser_classes
 from rest_framework.response import Response
 import pytz
 
+from .bulk_imports import XLSX_CONTENT_TYPE, generate_bulk_import_template, import_bulk_workbook, validate_upload_file
 from .config import config
 from .dialplan_utils import apply_dial_plan
 from .ldap import LDAPAuthHandler, LDAPAuthenticationError, LDAPConfigurationError
@@ -549,6 +551,46 @@ def get_timezones(request):
             continue
     
     return Response(timezones, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated, IsAdmin])
+def download_bulk_import_template(request):
+    """Download the XLSX template for bulk device and line import."""
+    workbook_bytes = generate_bulk_import_template()
+    response = HttpResponse(workbook_bytes, content_type=XLSX_CONTENT_TYPE)
+    response['Content-Disposition'] = 'attachment; filename="phone-manager-bulk-import-template.xlsx"'
+    return response
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated, IsAdmin])
+@parser_classes([MultiPartParser, FormParser])
+def bulk_import_workbook(request):
+    """Import devices and lines from an uploaded XLSX workbook."""
+    uploaded_file = request.FILES.get('file')
+    validate_upload_file(uploaded_file)
+
+    try:
+        result = import_bulk_workbook(uploaded_file.read())
+    except serializers.ValidationError:
+        raise
+    except Exception as exc:
+        logger.exception('Unexpected bulk import failure: %s', exc)
+        return Response(
+            {'detail': 'An unexpected error occurred while processing the workbook.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    logger.info(
+        'Bulk import completed by user=%s lines_imported=%s lines_skipped=%s devices_imported=%s devices_skipped=%s',
+        request.user.username,
+        result['lines']['imported_count'],
+        result['lines']['skipped_count'],
+        result['devices']['imported_count'],
+        result['devices']['skipped_count'],
+    )
+    return Response(result, status=status.HTTP_200_OK)
 
 
 class UserViewSet(viewsets.ModelViewSet):
