@@ -143,6 +143,36 @@ class BulkImportApiTests(TestCase):
         self.assertIn("already exists", payload["devices"]["skipped"][0]["reason"])
         self.assertIn("were not imported successfully", payload["devices"]["skipped"][1]["reason"])
 
+    def test_bulk_import_accepts_non_e164_directory_numbers(self):
+        self.client.force_authenticate(self.admin_user)
+
+        line_rows = [
+            ["Reception", "1001", "reception", "secret-a", "Reception", "FALSE"],
+        ]
+        device_rows = [
+            ["AA:BB:CC:DD:EE:10", "Reception Phone", "YealinkSIPT33G", "HQ", "1001", "TRUE"],
+        ]
+        workbook = self._build_workbook(line_rows, device_rows)
+
+        response = self.client.post(
+            reverse("bulk-import-upload"),
+            {"file": self._upload_file(workbook, "bulk-import-non-e164.xlsx")},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["lines"]["imported_count"], 1)
+        self.assertEqual(payload["devices"]["imported_count"], 1)
+
+        imported_line = Line.objects.get(directory_number="1001")
+        imported_device = Device.objects.get(mac_address="AA:BB:CC:DD:EE:10")
+        self.assertEqual(imported_line.name, "Reception")
+        self.assertEqual(
+            [line.directory_number for line in imported_device.get_ordered_lines()],
+            ["1001"],
+        )
+
     def _build_workbook(self, line_rows, device_rows) -> Workbook:
         workbook = Workbook()
         devices_sheet = workbook.active

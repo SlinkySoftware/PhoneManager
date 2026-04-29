@@ -131,19 +131,19 @@ Comprehensive validation, error handling, and delete confirmation patterns have 
 ### ✅ LinesPage.vue
 **Validation Rules:**
 - Name: Required
-- Directory Number: Required, E164 format validation (+[0-9]{7,15})
+- Directory Number: Required, maximum 32 characters
 - Registration Account: Required
 - Registration Password: Required
 - Shared: Optional toggle
 
 **Error Handling:**
-- E164 format validation with helpful error message
+- Directory number length validation with helpful error message
 - Password field marked as required
 - Delete confirmation with error display
 - Consistent error message extraction
 
 **New Features:**
-- E164 format validation for phone numbers
+- Directory number length validation
 - Password validation requirement
 - Error messages specific to field type
 
@@ -245,7 +245,7 @@ All pages include:
 | Host | "Host is required" or "Invalid hostname format" |
 | Port | "Port is required" or "Port must be between 1 and 65535" |
 | Transport | "Transport is required" |
-| Directory Number | "Directory Number is required" or "Invalid E164 format (e.g., +61299999999)" |
+| Directory Number | "Directory Number is required" or "Max 32 characters" |
 | Registration Account | "Registration Account is required" |
 | Password | "Password is required" |
 | MAC Address | "MAC Address is required" or "Invalid MAC format (e.g., 00:11:22:33:44:55)" |
@@ -264,7 +264,7 @@ All pages use the shared `api` client from `src/api.js` which handles:
 ### For Each Page:
 - [ ] Form validation prevents submission with empty required fields
 - [ ] Validation error messages display clearly
-- [ ] Format validations (MAC, E164, Port range) work correctly
+- [ ] Format validations (MAC, directory number length, Port range) work correctly
 - [ ] API submission succeeds when validation passes
 - [ ] API errors display in error banner
 - [ ] Delete button opens confirmation dialog

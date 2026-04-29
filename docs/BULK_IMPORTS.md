@@ -57,7 +57,7 @@ Required headers:
 | `Name` | Yes | Friendly device name. Stored as the device description. |
 | `Model` | Yes | Exact backend device `TypeID`, for example `YealinkSIPT33G`. |
 | `Site` | Yes | Existing Site name already present in the database. |
-| `Line E164 Numbers` | Yes | Comma-separated list of line numbers from the `Lines` sheet, in line assignment order. The first number becomes `line_1`. |
+| `Line E164 Numbers` | Yes | Comma-separated list of line directory numbers from the `Lines` sheet, in line assignment order. The first number becomes `line_1`. |
 | `Enabled` | No | Boolean value. Accepted values are `TRUE` or `FALSE`. Blank defaults to `TRUE`. |
 
 Important rules:
@@ -74,7 +74,7 @@ Required headers:
 | Column | Required | Description |
 | ------ | -------- | ----------- |
 | `Name` | Yes | Friendly line name. |
-| `Line E164 Number` | Yes | Directory number for the line. Must match E.164-style numeric input used by the template rules. |
+| `Line E164 Number` | Yes | Directory number for the line. The header name is retained for template compatibility, but values may use any numbering format accepted by your deployment. |
 | `Registration User` | Yes | SIP registration username. |
 | `Registration Password` | Yes | SIP registration password in plain text. Stored using the existing encrypted line field. |
 | `Phone Label` | No | Optional screen label for supported devices. |
@@ -109,7 +109,7 @@ Secondary line order from the `Line E164 Numbers` column is preserved.
 The import is not all-or-nothing.
 
 - Existing MAC addresses are skipped.
-- Existing line E164 numbers are skipped.
+- Existing line directory numbers are skipped.
 - Duplicate values repeated within the same workbook are skipped.
 - Processing continues for the remaining rows.
 

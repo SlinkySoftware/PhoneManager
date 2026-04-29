@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from io import BytesIO
-import re
 from typing import Any
 
 from rest_framework import serializers
@@ -41,7 +40,6 @@ LINE_HEADERS = [
 
 MAX_IMPORT_ROWS = 2000
 MAX_IMPORT_FILE_SIZE = 5 * 1024 * 1024
-E164_PATTERN = re.compile(r"^\+?[0-9]{7,15}$")
 TRUE_VALUES = {"1", "true", "t", "yes", "y"}
 FALSE_VALUES = {"0", "false", "f", "no", "n"}
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -67,7 +65,7 @@ def generate_bulk_import_template() -> bytes:
             "B1": "Required. Friendly device name.",
             "C1": "Required. Exact backend device TypeID.",
             "D1": "Required. Existing Site name.",
-            "E1": "Required. Comma-separated E164 numbers from the Lines sheet. First number becomes the primary line.",
+            "E1": "Required. Comma-separated line directory numbers from the Lines sheet. First number becomes the primary line.",
             "F1": "Optional. TRUE or FALSE. Blank defaults to TRUE.",
         },
     )
@@ -236,20 +234,16 @@ def _import_lines(line_rows: list[dict[str, Any]], summary: dict[str, Any]) -> t
         identifier = directory_number or f"row {row_number}"
 
         if not directory_number:
-            _record_skip(summary, row_number, identifier, "Line E164 Number is required.")
-            continue
-
-        if not E164_PATTERN.match(directory_number):
-            _record_skip(summary, row_number, identifier, "Line E164 Number must be a valid E164 value.")
+            _record_skip(summary, row_number, identifier, "Line directory number is required.")
             continue
 
         if directory_number in workbook_numbers:
-            _record_skip(summary, row_number, identifier, "Line E164 Number is duplicated within the workbook.")
+            _record_skip(summary, row_number, identifier, "Line directory number is duplicated within the workbook.")
             continue
         workbook_numbers.add(directory_number)
 
         if directory_number in existing_numbers:
-            _record_skip(summary, row_number, identifier, "Line E164 Number already exists.")
+            _record_skip(summary, row_number, identifier, "Line directory number already exists.")
             continue
 
         name = _required_text(row, "Name")
@@ -381,16 +375,11 @@ def _import_devices(
 
         line_numbers = [part.strip() for part in line_numbers_raw.split(",") if part and part.strip()]
         if not line_numbers:
-            _record_skip(summary, row_number, normalized_mac, "At least one Line E164 Number is required.")
+            _record_skip(summary, row_number, normalized_mac, "At least one line directory number is required.")
             continue
 
         if len(set(line_numbers)) != len(line_numbers):
-            _record_skip(summary, row_number, normalized_mac, "Line E164 Numbers cannot contain duplicates within a device row.")
-            continue
-
-        invalid_numbers = [number for number in line_numbers if not E164_PATTERN.match(number)]
-        if invalid_numbers:
-            _record_skip(summary, row_number, normalized_mac, f"Invalid line numbers: {', '.join(invalid_numbers)}.")
+            _record_skip(summary, row_number, normalized_mac, "Line directory numbers cannot contain duplicates within a device row.")
             continue
 
         if len(line_numbers) > device_type.NumberOfLines:

@@ -84,13 +84,13 @@
           />
           <q-input
             v-model="form.directory_number"
-            label="Directory Number (+E164)"
+            label="Directory Number"
             dense
             outlined
             :disable="isReadOnly"
             :rules="[
               val => !!val || 'Directory Number is required',
-              val => /^\+?[0-9]{7,15}$/.test(val) || 'Invalid E164 format (e.g., +61299999999)'
+              val => (val || '').length <= 32 || 'Max 32 characters'
             ]"
           />
           <q-input
