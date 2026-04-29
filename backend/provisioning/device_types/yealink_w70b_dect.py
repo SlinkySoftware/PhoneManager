@@ -1322,8 +1322,6 @@ class YealinkW70BDECT(DeviceType):
                 f"static.network.qos.signaltos = {sip_qos_dscp}",
                 f"static.wui.http_enable = {bool_flag(web_http_enable)}",
                 f"static.wui.https_enable = {bool_flag(web_https_enable)}",
-                f"static.network.port.http = {network_port_http}",
-                f"static.network.port.https = {network_port_https}",
                 f"static.managementserver.enable = {bool_flag(management_server_enable)}",
 
             ]
@@ -1386,10 +1384,11 @@ class YealinkW70BDECT(DeviceType):
             ]
         )
 
+        # Security - only set up users if admin password is provided (prevents lockout if password not set)
         if admin_password:
+            config_lines.append("security.user_name.admin = admin")
             config_lines.append(f"security.user_password = admin:{admin_password}")
-            config_lines.append(f"security.user_password = user:{admin_password}")
-
+            
         # Dial plan rules (site-level)
         dial_plan = getattr(site, "dial_plan", None)
         if dial_plan:
@@ -1409,6 +1408,11 @@ class YealinkW70BDECT(DeviceType):
         # Emergency Number
         if emergency_number:
             config_lines.append(f"phone_setting.emergency.number = {emergency_number}")
+
+        # Global Alarm Enable
+        if handset_alarm_destination:
+            config_lines.append("alarm.1.name = Button_Dial")
+            config_lines.append("alarm.1.type = 1")
 
         # Handset Configuration
         for idx, handset in enumerate(handsets, start=1):
