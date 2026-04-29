@@ -20,6 +20,21 @@
       no-data-label="No devices yet"
       :pagination="{ rowsPerPage: 20, rowsPerPageOptions: [20, 50, 100, 0] }"
     >
+      <template #body-cell-last_requested_ip_address="props">
+        <q-td :props="props">
+          <a
+            v-if="props.row.last_requested_ip_address"
+            :href="`http://${props.row.last_requested_ip_address}/`"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-primary"
+          >
+            {{ props.row.last_requested_ip_address }}
+          </a>
+          <span v-else>Unknown</span>
+        </q-td>
+      </template>
+
       <template #body-cell-actions="props">
         <q-td align="right">
           <q-btn v-if="!isReadOnly" dense flat icon="edit" color="primary" @click="openEdit(props.row)" />
