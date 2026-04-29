@@ -358,6 +358,20 @@ COMMON_OPTIONS: Dict[str, Any] = {
                     "uiOrder": 5,
                 }
 			]
+		},
+		{
+            "friendlyName": "Administrative",
+            "uiOrder": 6,
+            "options": [
+                {
+                    "optionId": "base_pin",
+                    "friendlyName": "Base Pin",
+                    "default": "0000",
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 1,
+                }
+			]
 		}
 	]
 }
@@ -1249,6 +1263,11 @@ class YealinkW70BDECT(DeviceType):
         local_time_format = opt("local_time_format", "24 Hour")
 
         # Device-only options
+        base_pin = str(opt("base_pin", "0000")).strip()
+        if not re.fullmatch(r"\d+", base_pin):
+            base_pin = "0000"
+        elif len(base_pin) < 4:
+            base_pin = base_pin.zfill(4)
         admin_password = opt("admin_password", "")
         
         # Emergency and Handset settings
@@ -1385,6 +1404,7 @@ class YealinkW70BDECT(DeviceType):
         )
 
         # Security - only set up users if admin password is provided (prevents lockout if password not set)
+        config_lines.append(f"static.security.base_pin = {base_pin}")
         if admin_password:
             config_lines.append("security.user_name.admin = admin")
             config_lines.append(f"security.user_password = admin:{admin_password}")
