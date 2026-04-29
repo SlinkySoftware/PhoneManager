@@ -1404,7 +1404,7 @@ class YealinkW70BDECT(DeviceType):
         )
 
         # Security - only set up users if admin password is provided (prevents lockout if password not set)
-        config_lines.append(f"static.security.base_pin = {base_pin}")
+        config_lines.append(f"base.pin_code = {base_pin}")
         if admin_password:
             config_lines.append("security.user_name.admin = admin")
             config_lines.append(f"security.user_password = admin:{admin_password}")
