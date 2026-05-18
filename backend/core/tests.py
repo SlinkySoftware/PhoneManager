@@ -4,9 +4,11 @@
 """Tests for bulk device and line import endpoints."""
 
 from io import BytesIO
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import DatabaseError
 from django.test import TestCase
 from django.urls import reverse
 from django.utils.crypto import get_random_string
@@ -15,6 +17,47 @@ from rest_framework.test import APIClient
 
 from .bulk_imports import DEVICE_HEADERS, DEVICES_SHEET_NAME, LINE_HEADERS, LINES_SHEET_NAME, XLSX_CONTENT_TYPE
 from .models import Device, DeviceTypeConfig, Line, SIPServer, Site, UserProfile
+
+
+class HealthApiTests(TestCase):
+    """Exercise the monitoring health endpoint."""
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_health_reports_ok_when_provisioning_query_succeeds(self):
+        response = self.client.get(reverse("health"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "status": "ok",
+                "database": {
+                    "status": "ok",
+                    "check": "provisioning_device_lookup",
+                },
+                "timestamp": response.json()["timestamp"],
+            },
+        )
+
+    def test_health_reports_service_unavailable_when_database_check_fails(self):
+        with patch("core.views._run_provisioning_health_check", side_effect=DatabaseError("db down")):
+            response = self.client.get(reverse("health"))
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json(),
+            {
+                "status": "error",
+                "database": {
+                    "status": "error",
+                    "check": "provisioning_device_lookup",
+                },
+                "detail": "Database connectivity check failed",
+                "timestamp": response.json()["timestamp"],
+            },
+        )
 
 
 class BulkImportApiTests(TestCase):

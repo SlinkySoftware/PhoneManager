@@ -5,9 +5,9 @@
 import logging
 import secrets
 import string
-from datetime import datetime
+from datetime import UTC, datetime
 from django.contrib.auth.models import User
-from django.db import IntegrityError
+from django.db import DatabaseError, IntegrityError
 from django.db.models import ProtectedError
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -65,6 +65,53 @@ class AdminOrReadOnly(permissions.BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return request.user and request.user.is_authenticated
         return bool(request.user and request.user.is_staff)
+
+
+def _run_provisioning_health_check() -> None:
+    """Run the database query shape used by provisioning lookups."""
+    Device.objects.select_related(
+        "line_1",
+        "site__primary_sip_server",
+        "site__secondary_sip_server",
+    ).order_by("pk").first()
+
+
+def _build_health_payload(status_value: str, database_status: str, detail: str | None = None) -> dict:
+    """Build a stable monitoring payload for the health endpoint."""
+    payload = {
+        'status': status_value,
+        'database': {
+            'status': database_status,
+            'check': 'provisioning_device_lookup',
+        },
+        'timestamp': datetime.now(UTC).replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+    }
+    if detail:
+        payload['detail'] = detail
+    return payload
+
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def health(request):
+    """Return application health for external monitoring."""
+    try:
+        _run_provisioning_health_check()
+    except DatabaseError:
+        logger.exception('Health check failed during provisioning database lookup')
+        return Response(
+            _build_health_payload(
+                status_value='error',
+                database_status='error',
+                detail='Database connectivity check failed',
+            ),
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    return Response(
+        _build_health_payload(status_value='ok', database_status='ok'),
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(['POST'])

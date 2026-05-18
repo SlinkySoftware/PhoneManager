@@ -673,7 +673,11 @@ sudo tail -n 50 /var/log/phonemanager/application.log
 sudo tail -n 50 /var/log/phonemanager/nginx-error.log
 
 # Check API health
-curl https://your.domain.com/api/auth/login/
+curl https://your.domain.com/api/health/
+# Healthy response (HTTP 200):
+# {"status":"ok","database":{"status":"ok","check":"provisioning_device_lookup"},"timestamp":"2026-05-19T03:30:00Z"}
+# Unhealthy response (HTTP 503):
+# {"status":"error","database":{"status":"error","check":"provisioning_device_lookup"},"detail":"Database connectivity check failed","timestamp":"2026-05-19T03:30:00Z"}
 ```
 
 ### Log Files
