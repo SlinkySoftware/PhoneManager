@@ -7,6 +7,7 @@ import logging
 import re
 from typing import Any, Dict
 
+from django.db import DatabaseError
 from django.http import Http404, HttpResponse
 from django.utils import timezone
 from rest_framework import permissions, serializers, status, viewsets
@@ -86,6 +87,14 @@ def get_client_ip_address(request) -> str | None:
     add_candidate(request.META.get("REMOTE_ADDR"))
 
     return candidates[0] if candidates else None
+
+
+def _record_last_provisioning_metadata(device: Device, client_ip: str | None) -> None:
+    """Persist best-effort metadata for a successful provisioning response."""
+    Device.objects.filter(pk=device.pk).update(
+        last_provisioned_at=timezone.now(),
+        last_requested_ip_address=client_ip,
+    )
 
 
 class DeviceTypeSerializer(serializers.Serializer):
@@ -188,9 +197,15 @@ class ProvisioningViewSet(viewsets.ViewSet):
         )
         config_text = renderer.render(decrypted_device)
 
-        # Update last provisioned metadata for the device request.
-        device.last_provisioned_at = timezone.now()
-        device.last_requested_ip_address = get_client_ip_address(request)
-        device.save(update_fields=['last_provisioned_at', 'last_requested_ip_address'])
-        
+        client_ip = get_client_ip_address(request)
+        try:
+            _record_last_provisioning_metadata(device, client_ip)
+        except DatabaseError:
+            logger.exception(
+                "Failed to persist provisioning metadata mac=%s device_type=%s client_ip=%s",
+                mac,
+                device.device_type_id,
+                client_ip,
+            )
+
         return HttpResponse(config_text, content_type=renderer.ContentType)
