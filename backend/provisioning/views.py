@@ -195,6 +195,7 @@ class ProvisioningViewSet(viewsets.ViewSet):
             ContentType=device_type_cls.ContentType,
             UserAgentPatterns=device_type_cls.UserAgentPatterns,
         )
+        renderer.request = request
         config_text = renderer.render(decrypted_device)
 
         client_ip = get_client_ip_address(request)

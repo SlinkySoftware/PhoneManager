@@ -1,4 +1,3 @@
-```markdown
 # Grandstream HT812 Configuration Renderer
 
 **Device Type ID:** `GrandstreamHT812`  
@@ -34,7 +33,7 @@ The renderer sets a focused subset of Grandstream P-parameters (P-codes) used fo
 
 - Provisioning / server info: `P192`, `P237`, `P212` (provisioning server and protocol)
 - Transport & RTP: `P130` (SIP transport), `P5004` (local RTP start port), `P84` (keepalive interval), `P2397` (enable keepalive)
-- SIP servers: `P47` (primary SIP host), `P967` (secondary SIP host)
+- SIP servers: `P47` (primary SIP host), `P193` (primary SIP port), `P8617` (From Domain), `P967` (secondary SIP host)
 - DSCP: `P5046` (SIP DSCP), `P5050` (RTP DSCP)
 - DTMF: `P79` (payload id), `P850`/`P851`/`P852` (method values)
 - Codec tags: a series of P-codes (e.g., `P57...P62`, `P46`, `P98`) are filled with codec p-values derived from `preferred_codecs`
@@ -99,6 +98,7 @@ When a site has a `DialPlan` configured, the renderer applies the converted rule
 
 - **Provisioning base URL**: The renderer includes provisioning server URL and protocol (`P192`, `P237`, `P212`) derived from `get_provisioning_base_url()`.
 - **MAC formatting**: MAC is uppercased and emitted without separators in the `<mac>` tag.
+- **Line display label**: `P4180` / `P4181` use the line `phone_label` when present, otherwise the line name and then the directory number.
 - **Content-Type**: `text/xml` is returned for Grandstream configurations.
 - **Partial P-coverage**: The renderer intentionally sets a compact, maintainable subset of P-codes — additional P-parameters can be added later as needed.
 
@@ -115,5 +115,3 @@ See `configuration/examples/grandstream-ht812.xml` for a complete sample of the 
 - [Device Type Options](DEVICE_TYPE_OPTIONS.md)
 - [Device Type Options - Quick Reference](DEVICE_TYPE_OPTIONS_QUICK_REF.md)
 - [Dial Plans](DIAL_PLANS.md)
-
-```

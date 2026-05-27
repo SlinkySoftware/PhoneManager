@@ -13,5 +13,4 @@ urlpatterns = [
     path("<str:pk>-phone.cfg", provision_view, name="provision-device"),
     path("<str:pk>.cfg", provision_view, name="provision-device"),
     path("<str:pk>", provision_view, name="provision-device"),
-   
 ]

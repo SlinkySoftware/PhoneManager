@@ -31,10 +31,16 @@ class DeviceType:
         """Return normalized provisioning base URL from config.
 
         Raises:
-            ValueError: If PROVISIONING_BASE_URL is missing or empty.
+            ValueError: If PROVISIONING_BASE_URL is missing or empty and no request fallback is available.
         """
         raw_url = config.get("PROVISIONING_BASE_URL", env_var="PROVISIONING_BASE_URL")
         normalized = (raw_url or "").strip().rstrip("/")
+        if not normalized:
+            request = getattr(self, "request", None)
+            if request is not None:
+                request_url = request.build_absolute_uri(request.path).rstrip("/")
+                normalized = request_url.rsplit("/", 1)[0]
+
         if not normalized:
             raise ValueError(
                 'Please set "PROVISIONING_BASE_URL" in configuration to the absolute URL '

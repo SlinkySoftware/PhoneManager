@@ -271,6 +271,8 @@ When a user authenticates via SAML:
 - Additional vendor-compatibility URL formats are accepted:
   - `/provision/<MAC>.cfg`
   - `/provision/<MAC>-phone.cfg`
+- `/provision/cfg<MAC>`
+- `/provision/cfg<MAC>.cfg`
   - `/provision/cfg<MAC>.xml`
 
 #### CORS configuration
@@ -319,6 +321,8 @@ When a user authenticates via SAML:
 - `GET /provision/<MAC>`: Return the rendered device configuration.
 - `GET /provision/<MAC>.cfg`: Vendor compatibility format.
 - `GET /provision/<MAC>-phone.cfg`: Polycom-style format.
+- `GET /provision/cfg<MAC>`: Grandstream-compatible filename format.
+- `GET /provision/cfg<MAC>.cfg`: Alternate Grandstream-compatible filename format.
 - `GET /provision/cfg<MAC>.xml`: XML provisioning format.
 - `GET /api/device-types/`: List available device types and option schemas.
 
