@@ -186,9 +186,8 @@ The endpoint must:
 - validate device context using the same logic as `/internal/device-context/`
 - reject invalid MAC/DN/token combinations
 - apply existing ordered regex transformation rules associated with the device/site/line dial plan
-- return the CUCM-ready `normalized_destination`
-- ensure the result is suitable for CUCM Call Forward All destination use
-- use `+E164` output format
+- return the final sanitized `normalized_destination`
+- allow unchanged pass-through for valid digit-only or `+digits` destinations
 - treat the supplied token case-sensitively
 - never return SIP password or token prefix
 
@@ -335,19 +334,19 @@ Expected behaviour:
 3. Retrieve the associated dial plan for the device/site/line.
 4. Apply ordered regex rules in configured order.
 5. Return first successful transformation result.
-6. If no rule changes the number but pass-through is valid according to the dial plan, return the original or canonicalised destination as `normalized_destination` and `matched: false`.
+6. If no rule changes the number but pass-through is valid, return the sanitized destination as `normalized_destination` and `matched: false`.
 7. If no rule matches and pass-through is invalid, return `Invalid Destination Specified`.
 
 Output format:
 
 ```text
-+E164
+digits or +digits
 ```
 
 Example output:
 
 ```text
-+61288836500
+61288836500 or 36500
 ```
 
 ---
@@ -495,5 +494,5 @@ Stop and ask a clarifying question if any of these are missing or cannot be sati
 - SIP-T33G model identification is ambiguous
 - DN comparison rules are unclear
 - ordered regex dial-plan model cannot be identified
-- +E164 output cannot be generated using existing rules
+- a valid sanitized destination cannot be generated using existing rules
 - localhost-only endpoint protection conflicts with existing deployment architecture

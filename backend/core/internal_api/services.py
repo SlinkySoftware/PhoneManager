@@ -26,9 +26,6 @@ DESTINATION_MAX_DIGITS = 20
 
 SEPARATOR_PATTERN = re.compile(r"[\s().-]+")
 PLUS_DIGITS_PATTERN = re.compile(r"^\+?\d+$")
-CANONICAL_DESTINATION_PATTERN = re.compile(
-    rf"^\+\d{{{DESTINATION_MIN_DIGITS},{DESTINATION_MAX_DIGITS}}}$"
-)
 
 
 @dataclass(frozen=True)
@@ -132,115 +129,30 @@ def normalize_destination(mac: str, dn: str, token: str, entered_destination: st
     """Normalize a call diversion destination to +E164-style output."""
     context_result = get_device_context(mac=mac, dn=dn, token=token)
     if not context_result.valid or not context_result.context:
-        compact_mac = normalize_mac((mac or "").strip()).replace(":", "") if mac else ""
-        _log_normalize_result(
-            compact_mac=compact_mac,
-            dn=dn,
-            result="invalid_context",
-            reason=context_result.reason or "invalid_context",
-            matched_rule_id=None,
-            matched_rule_sequence=None,
-            changed=False,
-        )
-        return NormalizeNumberResult(
-            success=False,
-            message=INVALID_CONTEXT_MESSAGE,
-            reason=context_result.reason or "invalid_context",
-        )
+        return _build_invalid_context_result(mac=mac, dn=dn, context_result=context_result)
 
     cleaned_destination = _sanitize_destination(entered_destination)
     if not cleaned_destination:
-        _log_normalize_result(
+        return _build_invalid_destination_result(
             compact_mac=context_result.context.compact_mac,
             dn=dn,
-            result="invalid_destination",
-            reason="invalid_destination_format",
-            matched_rule_id=None,
-            matched_rule_sequence=None,
-            changed=False,
-        )
-        return NormalizeNumberResult(
-            success=False,
-            message=INVALID_DESTINATION_MESSAGE,
             reason="invalid_destination_format",
         )
 
-    rules = []
-    if context_result.context.device.site.dial_plan_id:
-        rules = list(context_result.context.device.site.dial_plan.rules.order_by("sequence_order"))
+    rules = _get_site_dial_plan_rules(context_result.context)
 
     transformed_destination, matched_rule_sequence = apply_dial_plan(cleaned_destination, rules)
-    matched_rule = next((rule for rule in rules if rule.sequence_order == matched_rule_sequence), None)
-
     if matched_rule_sequence is not None:
-        canonical_destination = _canonicalize_transformed_destination(transformed_destination)
-        if not canonical_destination:
-            _log_normalize_result(
-                compact_mac=context_result.context.compact_mac,
-                dn=dn,
-                result="invalid_destination",
-                reason="rule_output_not_e164",
-                matched_rule_id=matched_rule.id if matched_rule else None,
-                matched_rule_sequence=matched_rule_sequence,
-                changed=False,
-            )
-            return NormalizeNumberResult(
-                success=False,
-                message=INVALID_DESTINATION_MESSAGE,
-                reason="rule_output_not_e164",
-                matched_rule_id=matched_rule.id if matched_rule else None,
-                matched_rule_sequence=matched_rule_sequence,
-            )
-
-        changed = transformed_destination != cleaned_destination
-        _log_normalize_result(
+        return _build_matched_rule_result(
             compact_mac=context_result.context.compact_mac,
             dn=dn,
-            result="ok",
-            reason="rule_applied",
-            matched_rule_id=matched_rule.id if matched_rule else None,
-            matched_rule_sequence=matched_rule_sequence,
-            changed=changed,
-        )
-        return NormalizeNumberResult(
-            success=True,
-            normalized_destination=canonical_destination,
-            matched=changed,
-            matched_rule_id=matched_rule.id if matched_rule else None,
+            cleaned_destination=cleaned_destination,
+            transformed_destination=transformed_destination,
+            rules=rules,
             matched_rule_sequence=matched_rule_sequence,
         )
 
-    passthrough_destination = _canonicalize_transformed_destination(cleaned_destination)
-    if not passthrough_destination:
-        _log_normalize_result(
-            compact_mac=context_result.context.compact_mac,
-            dn=dn,
-            result="invalid_destination",
-            reason="no_match_and_non_e164",
-            matched_rule_id=None,
-            matched_rule_sequence=None,
-            changed=False,
-        )
-        return NormalizeNumberResult(
-            success=False,
-            message=INVALID_DESTINATION_MESSAGE,
-            reason="no_match_and_non_e164",
-        )
-
-    _log_normalize_result(
-        compact_mac=context_result.context.compact_mac,
-        dn=dn,
-        result="ok",
-        reason="pass_through",
-        matched_rule_id=None,
-        matched_rule_sequence=None,
-        changed=False,
-    )
-    return NormalizeNumberResult(
-        success=True,
-        normalized_destination=passthrough_destination,
-        matched=False,
-    )
+    return _build_pass_through_result(compact_mac=context_result.context.compact_mac, dn=dn, destination=cleaned_destination)
 
 
 def _directory_numbers_match(provided_dn: str, expected_dn: str) -> bool:
@@ -267,18 +179,108 @@ def _sanitize_destination(destination: str) -> str | None:
     return f"+{digits}" if cleaned.startswith("+") else digits
 
 
-def _canonicalize_transformed_destination(destination: str) -> str | None:
-    cleaned = _sanitize_destination(destination)
-    if not cleaned:
-        return None
+def _build_invalid_context_result(
+    *,
+    mac: str,
+    dn: str,
+    context_result: DeviceContextResult,
+) -> NormalizeNumberResult:
+    compact_mac = normalize_mac((mac or "").strip()).replace(":", "") if mac else ""
+    reason = context_result.reason or "invalid_context"
+    _log_normalize_result(
+        compact_mac=compact_mac,
+        dn=dn,
+        result="invalid_context",
+        reason=reason,
+        matched_rule_id=None,
+        matched_rule_sequence=None,
+        changed=False,
+    )
+    return NormalizeNumberResult(success=False, message=INVALID_CONTEXT_MESSAGE, reason=reason)
 
-    if not cleaned.startswith("+"):
-        return None
 
-    if not CANONICAL_DESTINATION_PATTERN.fullmatch(cleaned):
-        return None
+def _build_invalid_destination_result(
+    *,
+    compact_mac: str,
+    dn: str,
+    reason: str,
+    matched_rule_id: int | None = None,
+    matched_rule_sequence: int | None = None,
+) -> NormalizeNumberResult:
+    _log_normalize_result(
+        compact_mac=compact_mac,
+        dn=dn,
+        result="invalid_destination",
+        reason=reason,
+        matched_rule_id=matched_rule_id,
+        matched_rule_sequence=matched_rule_sequence,
+        changed=False,
+    )
+    return NormalizeNumberResult(
+        success=False,
+        message=INVALID_DESTINATION_MESSAGE,
+        reason=reason,
+        matched_rule_id=matched_rule_id,
+        matched_rule_sequence=matched_rule_sequence,
+    )
 
-    return cleaned
+
+def _get_site_dial_plan_rules(context: DeviceContext) -> list:
+    if not context.device.site.dial_plan_id:
+        return []
+    return list(context.device.site.dial_plan.rules.order_by("sequence_order"))
+
+
+def _build_matched_rule_result(
+    *,
+    compact_mac: str,
+    dn: str,
+    cleaned_destination: str,
+    transformed_destination: str,
+    rules: list,
+    matched_rule_sequence: int,
+) -> NormalizeNumberResult:
+    matched_rule = next((rule for rule in rules if rule.sequence_order == matched_rule_sequence), None)
+    normalized_destination = _sanitize_destination(transformed_destination)
+    if not normalized_destination:
+        return _build_invalid_destination_result(
+            compact_mac=compact_mac,
+            dn=dn,
+            reason="invalid_rule_output_format",
+            matched_rule_id=matched_rule.id if matched_rule else None,
+            matched_rule_sequence=matched_rule_sequence,
+        )
+
+    changed = transformed_destination != cleaned_destination
+    _log_normalize_result(
+        compact_mac=compact_mac,
+        dn=dn,
+        result="ok",
+        reason="rule_applied",
+        matched_rule_id=matched_rule.id if matched_rule else None,
+        matched_rule_sequence=matched_rule_sequence,
+        changed=changed,
+    )
+    return NormalizeNumberResult(
+        success=True,
+        normalized_destination=normalized_destination,
+        matched=changed,
+        matched_rule_id=matched_rule.id if matched_rule else None,
+        matched_rule_sequence=matched_rule_sequence,
+    )
+
+
+def _build_pass_through_result(*, compact_mac: str, dn: str, destination: str) -> NormalizeNumberResult:
+    _log_normalize_result(
+        compact_mac=compact_mac,
+        dn=dn,
+        result="ok",
+        reason="pass_through",
+        matched_rule_id=None,
+        matched_rule_sequence=None,
+        changed=False,
+    )
+    return NormalizeNumberResult(success=True, normalized_destination=destination, matched=False)
 
 
 def _log_device_context_result(compact_mac: str, dn: str, result: str, reason: str) -> None:

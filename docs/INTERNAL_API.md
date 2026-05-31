@@ -81,8 +81,8 @@ Behavior:
 - Reuses the same device-context validation as `/internal/device-context/`.
 - Validates and sanitizes the entered destination defensively.
 - Applies the site's ordered `DialPlanRule` records through the shared `apply_dial_plan()` utility.
-- Accepts pass-through only when the final number is already in `+` plus digits form.
-- Returns `normalized_destination` in `+digits` format only.
+- Always returns the final sanitized destination in `normalized_destination`, whether a dial plan rule changed it or it passed through unchanged.
+- Returns digit-only or `+digits` output depending on the dial plan result and the originally entered destination.
 
 Successful response:
 

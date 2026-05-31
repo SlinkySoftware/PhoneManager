@@ -248,6 +248,65 @@ class InternalApiTests(TestCase):
             {"normalized_destination": "+61288836500", "matched": False},
         )
 
+    def test_normalize_number_allows_digit_only_pass_through_when_no_rule_matches(self):
+        no_match_plan = DialPlan.objects.create(name="No Match Digits", description="Leaves internal extensions alone")
+        DialPlanRule.objects.create(
+            dial_plan=no_match_plan,
+            input_regex="0(XXXXXXXXX)",
+            output_regex="+61$1",
+            sequence_order=0,
+        )
+        self.device.site.dial_plan = no_match_plan
+        self.device.site.save(update_fields=["dial_plan"])
+
+        response = self.client.post(
+            reverse("internal-normalize-number"),
+            data={
+                "mac": self.device.mac_address,
+                "dn": "+61288836500",
+                "token": self.primary_token,
+                "entered_destination": "36500",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"normalized_destination": "36500", "matched": False},
+        )
+
+    def test_normalize_number_allows_digit_only_pass_through_when_rule_keeps_internal_extension(self):
+        internal_extension_plan = DialPlan.objects.create(
+            name="Internal Extensions",
+            description="Explicitly allows unchanged internal destinations",
+        )
+        DialPlanRule.objects.create(
+            dial_plan=internal_extension_plan,
+            input_regex="^(365XX)",
+            output_regex="$1",
+            sequence_order=0,
+        )
+        self.device.site.dial_plan = internal_extension_plan
+        self.device.site.save(update_fields=["dial_plan"])
+
+        response = self.client.post(
+            reverse("internal-normalize-number"),
+            data={
+                "mac": self.device.mac_address,
+                "dn": "+61288836500",
+                "token": self.primary_token,
+                "entered_destination": "36500",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"normalized_destination": "36500", "matched": False},
+        )
+
     def test_normalize_number_rejects_invalid_destination(self):
         response = self.client.post(
             reverse("internal-normalize-number"),
