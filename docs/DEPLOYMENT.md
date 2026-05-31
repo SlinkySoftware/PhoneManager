@@ -139,6 +139,7 @@ What it configures:
 - Configures Gunicorn stdout/stderr to append to `application.log`
 - Configures Gunicorn access logging to `gunicorn-access.log`
 - Configures nginx to proxy Django WSGI endpoints (`/api/`, `/admin/`, `/provision/`) to Gunicorn
+- Leaves `/internal/` unproxied so localhost-only integration endpoints remain private
 - Configures nginx to serve frontend SPA from `frontend/dist/spa`
 - Configures nginx access/error logs in the same log directory
 - Writes `/etc/logrotate.d/phonemanager` for daily rotation and two-week retention
@@ -386,6 +387,11 @@ server {
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
+    }
+
+    # Internal localhost-only endpoints must never be exposed publicly.
+    location /internal/ {
+        return 404;
     }
 
     # Provisioning endpoints

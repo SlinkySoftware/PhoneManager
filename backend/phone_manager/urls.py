@@ -32,6 +32,7 @@ urlpatterns = [
     path("api/imports/template/", core_views.download_bulk_import_template, name="bulk-import-template"),
     path("api/imports/upload/", core_views.bulk_import_workbook, name="bulk-import-upload"),
     path("api/timezones/", core_views.get_timezones, name="timezones"),
+    path("internal/", include("core.internal_api.urls")),
     path("api/", include(router.urls)),
     path("provision/", include("provisioning.urls")),
 ]

@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 from datetime import datetime
 import re
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pytz
 
@@ -344,6 +345,36 @@ COMMON_OPTIONS: Dict[str, Any] = {
                     "uiOrder": 5,
                 }
 			]
+		},
+        {
+            "friendlyName": "Phone Services",
+            "uiOrder": 6,
+            "options": [
+                {
+                    "optionId": "phone_service_url",
+                    "friendlyName": "Phone Service URL",
+                    "default": "",
+                    "mandatory": False,
+                    "type": "text",
+                    "uiOrder": 1,
+                },
+                {
+                    "optionId": "phone_service_programmable_key_number",
+                    "friendlyName": "Programmable Key Number",
+                    "default": 3,
+                    "mandatory": False,
+                    "type": "number",
+                    "uiOrder": 2,
+                },
+                {
+                    "optionId": "phone_service_label",
+                    "friendlyName": "Label",
+                    "default": "",
+                    "mandatory": False,
+                    "type": "text",
+                    "uiOrder": 3,
+                },
+            ]
 		}
 	]
 }
@@ -402,6 +433,14 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                     "mandatory": False,
                     "type": "boolean",
                     "uiOrder": 3,
+                },
+                {
+                    "optionId": "use_phone_services",
+                    "friendlyName": "Use Phone Services",
+                    "default": False,
+                    "mandatory": False,
+                    "type": "boolean",
+                    "uiOrder": 4,
                 },                
 			]
 		},
@@ -540,6 +579,36 @@ class YealinkSIPT33G(DeviceType):
 
         def bool_flag(value: Any) -> str:
             return "1" if bool(value) else "0"
+
+        def int_opt(key: str, default: int) -> int:
+            try:
+                return int(opt(key, default))
+            except (TypeError, ValueError):
+                return default
+
+        def build_phone_service_url(base_url: str, primary_line: Any) -> str:
+            parsed_url = urlsplit(base_url)
+            query_items = [
+                (key, value)
+                for key, value in parse_qsl(parsed_url.query, keep_blank_values=True)
+                if key not in {"mac", "dn", "token"}
+            ]
+            query_items.extend(
+                [
+                    ("mac", device.mac_address),
+                    ("dn", primary_line.directory_number),
+                    ("token", (primary_line.registration_password or "")[:8]),
+                ]
+            )
+            return urlunsplit(
+                (
+                    parsed_url.scheme,
+                    parsed_url.netloc,
+                    parsed_url.path,
+                    urlencode(query_items),
+                    parsed_url.fragment,
+                )
+            )
 
         def convert_yealink_input_regex(pattern: str) -> str:
             if not pattern:
@@ -850,6 +919,10 @@ class YealinkSIPT33G(DeviceType):
         save_call_log = bool(opt("save_call_log", True))
         missed_calllog_enable = bool(opt("missed_calllog_enable", True))
         call_list_show_number = bool(opt("call_list_show_number", True))
+        use_phone_services = bool(opt("use_phone_services", False))
+        phone_service_url = str(opt("phone_service_url", "") or "").strip()
+        phone_service_programmable_key_number = int_opt("phone_service_programmable_key_number", 3)
+        phone_service_label = str(opt("phone_service_label", "") or "")
         voice_country = opt("voice_country", "Australia")
 
         # Date & Time
@@ -982,6 +1055,18 @@ class YealinkSIPT33G(DeviceType):
         if admin_password:
             config_lines.append(f"security.user_password = admin:{admin_password}")
             config_lines.append(f"security.user_password = user:{admin_password}")
+
+        primary_line = lines[0] if lines else None
+        if use_phone_services and phone_service_url and primary_line is not None:
+            full_phone_service_url = build_phone_service_url(phone_service_url, primary_line)
+            config_lines.extend(
+                [
+                    f"programablekey.{phone_service_programmable_key_number}.label = {phone_service_label}",
+                    f"programablekey.{phone_service_programmable_key_number}.line = 0",
+                    f"programablekey.{phone_service_programmable_key_number}.type = 27",
+                    f"programablekey.{phone_service_programmable_key_number}.value = {full_phone_service_url}",
+                ]
+            )
 
         # Dial plan rules (site-level)
         dial_plan = getattr(site, "dial_plan", None)

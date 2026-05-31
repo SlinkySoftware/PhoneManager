@@ -271,6 +271,11 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
+      # Internal localhost-only endpoints must never be proxied publicly.
+      location /internal/ {
+        return 404;
+      }
+
     # Provisioning endpoints for phones
     location /provision/ {
         proxy_pass http://phonemanager_backend;

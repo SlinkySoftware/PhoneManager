@@ -9,9 +9,10 @@ from django.db import DatabaseError
 from django.test import RequestFactory, TestCase
 from django.urls import reverse
 
-from core.models import Device, Line, SIPServer, Site
+from core.models import Device, DeviceTypeConfig, Line, SIPServer, Site
 from provisioning.device_types.base import DeviceType
 from provisioning.device_types.grandstream_ht812 import GrandstreamHT812
+from provisioning.device_types.yealink_sip_t33g import YealinkSIPT33G
 
 
 class FakeProvisioningPhone(DeviceType):
@@ -179,3 +180,90 @@ class GrandstreamHT812RendererTests(TestCase):
         self.assertIn("<P4090>36503</P4090>", xml)
         self.assertIn("<P4180>Reception 36503</P4180>", xml)
         self.assertIn("<P4120>secret</P4120>", xml)
+
+
+class YealinkSIPT33GRendererTests(TestCase):
+    """Exercise SIP-T33G specific rendering branches."""
+
+    def setUp(self):
+        self.sip_server = SIPServer.objects.create(name="Primary", host="172.19.80.80", port=5060)
+        self.site = Site.objects.create(name="Branch", primary_sip_server=self.sip_server, timezone="UTC")
+        self.line = Line.objects.create(
+            name="Extn 36503",
+            phone_label="Reception 36503",
+            directory_number="36503",
+            registration_account="36503",
+            registration_password="secretpass",
+            is_shared=False,
+        )
+        self.device = Device.objects.create(
+            mac_address="C0:74:AD:DE:96:9A",
+            description="Yealink T33G",
+            device_type_id=YealinkSIPT33G.TypeID,
+            site=self.site,
+            line_1=self.line,
+            enabled=True,
+        )
+        self.device_type_config = DeviceTypeConfig.objects.create(type_id=YealinkSIPT33G.TypeID)
+
+    def _renderer(self) -> YealinkSIPT33G:
+        return YealinkSIPT33G(
+            TypeID=YealinkSIPT33G.TypeID,
+            Manufacturer=YealinkSIPT33G.Manufacturer,
+            Model=YealinkSIPT33G.Model,
+            NumberOfLines=YealinkSIPT33G.NumberOfLines,
+            CommonOptions=YealinkSIPT33G.CommonOptions,
+            DeviceSpecificOptions=YealinkSIPT33G.DeviceSpecificOptions,
+            SupportsSIPServersPerLine=YealinkSIPT33G.SupportsSIPServersPerLine,
+            ContentType=YealinkSIPT33G.ContentType,
+            UserAgentPatterns=YealinkSIPT33G.UserAgentPatterns,
+        )
+
+    def _configure_phone_service(self, *, enabled: bool, url: str, key_number: int = 3, label: str = "") -> None:
+        self.device_type_config.set_encrypted_saved_values(
+            {
+                "phone_service_url": url,
+                "phone_service_programmable_key_number": key_number,
+                "phone_service_label": label,
+            }
+        )
+        self.device_type_config.save(update_fields=["common_options"])
+
+        self.device.set_encrypted_device_config({"use_phone_services": enabled})
+        self.device.save(update_fields=["device_specific_configuration"])
+
+    def test_render_includes_phone_service_programmable_key_when_enabled(self):
+        self._configure_phone_service(
+            enabled=True,
+            url="http://phoneservices.example.internal/services/",
+            key_number=5,
+            label="Services",
+        )
+
+        config = self._renderer().render(self.device)
+
+        self.assertIn("programablekey.5.label = Services", config)
+        self.assertIn("programablekey.5.line = 0", config)
+        self.assertIn("programablekey.5.type = 27", config)
+        self.assertIn(
+            "programablekey.5.value = "
+            "http://phoneservices.example.internal/services/?mac=C0%3A74%3AAD%3ADE%3A96%3A9A&dn=36503&token=secretpa",
+            config,
+        )
+
+    def test_render_omits_phone_service_programmable_key_when_disabled_or_url_blank(self):
+        scenarios = [
+            {"enabled": False, "url": "http://phoneservices.example.internal/services/"},
+            {"enabled": True, "url": ""},
+        ]
+
+        for scenario in scenarios:
+            with self.subTest(**scenario):
+                self._configure_phone_service(enabled=scenario["enabled"], url=scenario["url"])
+
+                config = self._renderer().render(self.device)
+
+                self.assertNotIn("programablekey.3.label =", config)
+                self.assertNotIn("programablekey.3.line = 0", config)
+                self.assertNotIn("programablekey.3.type = 27", config)
+                self.assertNotIn("programablekey.3.value =", config)
