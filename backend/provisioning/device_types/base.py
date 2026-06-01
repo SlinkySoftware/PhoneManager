@@ -4,7 +4,8 @@
 """Base device type renderer contract."""
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any, Dict, Tuple
+from typing import Any, ClassVar, Dict, Tuple
+from urllib.parse import quote
 
 from core.config import config
 
@@ -22,10 +23,38 @@ class DeviceType:
     SupportsSIPServersPerLine: bool = False
     ContentType: str = "text/plain"  # HTTP Content-Type for rendered configuration
     UserAgentPatterns: Tuple[str, ...] = ()
+    lockdown_filename: ClassVar[str] = ""
+    lockdown_payload: ClassVar[str] = ""
 
     def render(self, device: Any) -> str:
         """Render configuration text for a fully-populated Device instance."""
         raise NotImplementedError
+
+    @classmethod
+    def get_lockdown_filename(cls) -> str:
+        """Return the public lockdown asset filename for this renderer."""
+        return str(getattr(cls, "lockdown_filename", "") or "").strip()
+
+    @classmethod
+    def get_lockdown_payload(cls) -> str:
+        """Return the renderer-owned lockdown payload as plain text."""
+        payload = str(getattr(cls, "lockdown_payload", "") or "").strip()
+        if not payload:
+            return ""
+        return f"{payload}\n"
+
+    @classmethod
+    def has_lockdown_payload(cls) -> bool:
+        """Return whether this renderer exposes a lockdown asset."""
+        return bool(cls.get_lockdown_filename() and cls.get_lockdown_payload())
+
+    def get_lockdown_url(self) -> str:
+        """Return the absolute lockdown asset URL for this renderer."""
+        filename = type(self).get_lockdown_filename()
+        if not filename:
+            raise ValueError("This renderer does not define a lockdown asset filename.")
+
+        return f"{self.get_provisioning_base_url()}/security/{quote(filename, safe='')}"
 
     def get_provisioning_base_url(self) -> str:
         """Return normalized provisioning base URL from config.

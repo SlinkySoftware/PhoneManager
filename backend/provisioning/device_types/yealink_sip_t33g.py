@@ -457,12 +457,20 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                     "uiOrder": 1,
                 },
                 {
+                    "optionId": "phone_lockdown",
+                    "friendlyName": "Phone LockDown",
+                    "default": False,
+                    "mandatory": False,
+                    "type": "boolean",
+                    "uiOrder": 2,
+                },
+                {
                     "optionId": "voice_country",
                     "friendlyName": "Voice Tones Country",
                     "default": "",
                     "mandatory": False,
                     "type": "text",
-                    "uiOrder": 2,
+                    "uiOrder": 3,
                 }
             ]
         },
@@ -567,6 +575,29 @@ class YealinkSIPT33G(DeviceType):
     UserAgentPatterns = (
         r"Yealink[/ ]SIP[- ]?T33G",
     )
+    lockdown_filename = "sipt33g-secure.cfg"
+    lockdown_payload = """[ GUI ]
+bluetooth = 1
+Basic_LANG = 1
+phonelockswitch = 1
+softkey Label = 1
+dhcptimezone = 1
+date_and_time_general = 1
+Basic_Time_Format = 1
+Main_Contacts = 1
+features = 1
+broadsoft_calllog_list = 1
+MSG_Voice = 1
+MSG_Text = 1
+security_connectplatform = 1
+security_packetcapture = 1
+security_screenshot = 1
+Status_IPv6 = 1
+Status_Network_IPV6 = 1
+Status_BT_MAC = 1
+Status_Qr_Code = 1
+Status_WIFI_SSID = 1
+wifi = 1"""
 
     def render(self, device: Any) -> str:
         # Pull decrypted device-specific configuration (includes admin password)
@@ -924,6 +955,7 @@ class YealinkSIPT33G(DeviceType):
         phone_service_programmable_key_number = int_opt("phone_service_programmable_key_number", 3)
         phone_service_label = str(opt("phone_service_label", "") or "")
         voice_country = opt("voice_country", "Australia")
+        phone_lockdown = bool(opt("phone_lockdown", False))
 
         # Date & Time
         local_date_format = opt("local_date_format", "DD MMM YYYY")
@@ -994,6 +1026,8 @@ class YealinkSIPT33G(DeviceType):
 
             ]
         )
+        if phone_lockdown and type(self).has_lockdown_payload():
+            config_lines.append(f"static.web_item_level.url = {self.get_lockdown_url()}")
 
         # Syslog Configuration
         if syslog_enable:

@@ -13,6 +13,7 @@ from core.models import Device, DeviceTypeConfig, Line, SIPServer, Site
 from provisioning.device_types.base import DeviceType
 from provisioning.device_types.grandstream_ht812 import GrandstreamHT812
 from provisioning.device_types.yealink_sip_t33g import YealinkSIPT33G
+from provisioning.device_types.yealink_w70b_dect import YealinkW70BDECT
 
 
 class FakeProvisioningPhone(DeviceType):
@@ -45,6 +46,24 @@ class FakeProvisioningBaseUrlPhone(DeviceType):
 
     def render(self, device):
         return self.get_provisioning_base_url()
+
+
+class FakeProvisioningSecurityPhone(DeviceType):
+    """Minimal device type used to exercise renderer-owned security assets."""
+
+    TypeID = "FakeProvisioningSecurityPhone"
+    Manufacturer = "Slinky"
+    Model = "Test Security Phone"
+    NumberOfLines = 1
+    CommonOptions = {}
+    DeviceSpecificOptions = {}
+    ContentType = "text/plain"
+    UserAgentPatterns = ()
+    lockdown_filename = "fake-secure.cfg"
+    lockdown_payload = "[ GUI ]\nbluetooth = 1"
+
+    def render(self, device):
+        return "security test"
 
 
 class ProvisioningViewSetTests(TestCase):
@@ -131,6 +150,36 @@ class ProvisioningViewSetTests(TestCase):
         self.assertIsNone(self.device.last_provisioned_at)
         self.assertIsNone(self.device.last_requested_ip_address)
 
+    def test_security_asset_returns_renderer_payload(self):
+        with patch(
+            "provisioning.views.get_device_type_by_lockdown_filename",
+            return_value=FakeProvisioningSecurityPhone,
+        ):
+            response = self.client.get(
+                reverse("provision-security-asset", args=[FakeProvisioningSecurityPhone.lockdown_filename])
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content.decode(), "[ GUI ]\nbluetooth = 1\n")
+        self.assertTrue(response["Content-Type"].startswith("text/plain"))
+
+    def test_security_asset_returns_t33g_renderer_payload(self):
+        response = self.client.get(reverse("provision-security-asset", args=[YealinkSIPT33G.lockdown_filename]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content.decode(), YealinkSIPT33G.get_lockdown_payload())
+
+    def test_security_asset_returns_w70b_renderer_payload(self):
+        response = self.client.get(reverse("provision-security-asset", args=[YealinkW70BDECT.lockdown_filename]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content.decode(), YealinkW70BDECT.get_lockdown_payload())
+
+    def test_security_asset_returns_404_for_unknown_asset(self):
+        response = self.client.get(reverse("provision-security-asset", args=["unknown-secure.cfg"]))
+
+        self.assertEqual(response.status_code, 404)
+
 
 class GrandstreamHT812RendererTests(TestCase):
     """Exercise core SIP fields rendered for the HT812."""
@@ -186,6 +235,7 @@ class YealinkSIPT33GRendererTests(TestCase):
     """Exercise SIP-T33G specific rendering branches."""
 
     def setUp(self):
+        self.factory = RequestFactory()
         self.sip_server = SIPServer.objects.create(name="Primary", host="172.19.80.80", port=5060)
         self.site = Site.objects.create(name="Branch", primary_sip_server=self.sip_server, timezone="UTC")
         self.line = Line.objects.create(
@@ -267,3 +317,82 @@ class YealinkSIPT33GRendererTests(TestCase):
                 self.assertNotIn("programablekey.3.line = 0", config)
                 self.assertNotIn("programablekey.3.type = 27", config)
                 self.assertNotIn("programablekey.3.value =", config)
+
+    def test_render_includes_lockdown_url_when_enabled(self):
+        self.device.set_encrypted_device_config({"phone_lockdown": True})
+        self.device.save(update_fields=["device_specific_configuration"])
+
+        renderer = self._renderer()
+        renderer.request = self.factory.get("/provision/cfgc074adde969a.xml", HTTP_HOST="pbx.example.test:8000")
+
+        with patch("provisioning.device_types.base.config.get", return_value=""):
+            config = renderer.render(self.device)
+
+        self.assertIn(
+            "static.web_item_level.url = http://pbx.example.test:8000/provision/security/sipt33g-secure.cfg",
+            config,
+        )
+
+    def test_render_omits_lockdown_url_when_disabled(self):
+        config = self._renderer().render(self.device)
+
+        self.assertNotIn("static.web_item_level.url =", config)
+
+
+class YealinkW70BDECTRendererTests(TestCase):
+    """Exercise W70B-specific rendering branches."""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.test_registration_secret = "w70b-test-secret"
+        self.sip_server = SIPServer.objects.create(name="Primary", host="pbx.example.test", port=5060)
+        self.site = Site.objects.create(name="Branch", primary_sip_server=self.sip_server, timezone="UTC")
+        self.line = Line.objects.create(
+            name="Extn 36503",
+            phone_label="Reception 36503",
+            directory_number="36503",
+            registration_account="36503",
+            registration_password=self.test_registration_secret,
+            is_shared=False,
+        )
+        self.device = Device.objects.create(
+            mac_address="C0:74:AD:DE:96:9B",
+            description="Yealink W70B",
+            device_type_id=YealinkW70BDECT.TypeID,
+            site=self.site,
+            line_1=self.line,
+            enabled=True,
+        )
+
+    def _renderer(self) -> YealinkW70BDECT:
+        return YealinkW70BDECT(
+            TypeID=YealinkW70BDECT.TypeID,
+            Manufacturer=YealinkW70BDECT.Manufacturer,
+            Model=YealinkW70BDECT.Model,
+            NumberOfLines=YealinkW70BDECT.NumberOfLines,
+            CommonOptions=YealinkW70BDECT.CommonOptions,
+            DeviceSpecificOptions=YealinkW70BDECT.DeviceSpecificOptions,
+            SupportsSIPServersPerLine=YealinkW70BDECT.SupportsSIPServersPerLine,
+            ContentType=YealinkW70BDECT.ContentType,
+            UserAgentPatterns=YealinkW70BDECT.UserAgentPatterns,
+        )
+
+    def test_render_includes_lockdown_url_when_enabled(self):
+        self.device.set_encrypted_device_config({"phone_lockdown": True})
+        self.device.save(update_fields=["device_specific_configuration"])
+
+        renderer = self._renderer()
+        renderer.request = self.factory.get("/provision/cfgc074adde969b.xml", HTTP_HOST="pbx.example.test:8000")
+
+        with patch("provisioning.device_types.base.config.get", return_value=""):
+            config = renderer.render(self.device)
+
+        self.assertIn(
+            "static.web_item_level.url = http://pbx.example.test:8000/provision/security/w70b-secure.cfg",
+            config,
+        )
+
+    def test_render_omits_lockdown_url_when_disabled(self):
+        config = self._renderer().render(self.device)
+
+        self.assertNotIn("static.web_item_level.url =", config)

@@ -195,6 +195,29 @@ sip_server = device.device_specific_configuration.get("sip_server_1", "")
 speaker_volume = device.device_specific_configuration.get("speaker_volume", 5)
 ```
 
+### Renderer-Owned Lockdown Assets
+
+Renderers can expose an auxiliary plaintext asset for vendor features that reference a second provisioning URL, such as Yealink `static.web_item_level.url`.
+
+```python
+class ExampleSIPPhone(DeviceType):
+  lockdown_filename = "example-secure.cfg"
+  lockdown_payload = """[ GUI ]
+bluetooth = 1
+"""
+
+  def render(self, device) -> str:
+    cfg = device.device_specific_configuration or {}
+    config_lines = []
+
+    if cfg.get("phone_lockdown"):
+      config_lines.append(f"static.web_item_level.url = {self.get_lockdown_url()}")
+
+    return "\n".join(config_lines)
+```
+
+The `/provision/security/<filename>` endpoint is unauthenticated and resolves the payload from the renderer class, not from a specific device. `get_lockdown_url()` uses `PROVISIONING_BASE_URL` when set and falls back to the current provisioning request URL in development or minimal deployments.
+
 ## Usage Example: Grandstream Device Type
 
 Expected schema structure for Grandstream device:

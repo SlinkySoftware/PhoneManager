@@ -16,7 +16,7 @@ from rest_framework.response import Response
 
 from core.models import Device, DeviceTypeConfig, normalize_mac
 from core.serializers import DeviceTypeConfigSerializer
-from .registry import get_device_type, list_device_types
+from .registry import get_device_type, get_device_type_by_lockdown_filename, list_device_types
 
 
 logger = logging.getLogger(__name__)
@@ -133,6 +133,17 @@ class DeviceTypeViewSet(viewsets.ViewSet):
 
 class ProvisioningViewSet(viewsets.ViewSet):
     permission_classes = [permissions.AllowAny]
+
+    def security_asset(self, request, asset_name=None):
+        device_type_cls = get_device_type_by_lockdown_filename(asset_name or "")
+        if not device_type_cls:
+            raise Http404("Unknown security asset")
+
+        payload = device_type_cls.get_lockdown_payload()
+        if not payload:
+            raise Http404("Unknown security asset")
+
+        return HttpResponse(payload, content_type="text/plain")
 
     def retrieve(self, request, pk=None):
         mac = normalize_mac(pk)

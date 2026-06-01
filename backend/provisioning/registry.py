@@ -28,3 +28,15 @@ def list_device_types() -> List[Type[DeviceType]]:
 
 def get_device_type(type_id: str) -> Type[DeviceType] | None:
     return REGISTERED_TYPES.get(type_id)
+
+
+def get_device_type_by_lockdown_filename(filename: str) -> Type[DeviceType] | None:
+    normalized = (filename or "").strip()
+    if not normalized:
+        return None
+
+    for device_type_cls in REGISTERED_TYPES.values():
+        if device_type_cls.get_lockdown_filename() == normalized and device_type_cls.has_lockdown_payload():
+            return device_type_cls
+
+    return None
