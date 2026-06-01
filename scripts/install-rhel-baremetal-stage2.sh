@@ -12,6 +12,7 @@ FRONTEND_DIR="$APP_DIR/frontend"
 ENV_DIR="/etc/phonemanager"
 ENV_FILE="$ENV_DIR/backend.env"
 NGINX_CONF="/etc/nginx/conf.d/phonemanager.conf"
+NGINX_SERVER_INCLUDE_DIR="/etc/nginx/conf.d/phonemanager.d"
 SYSTEMD_SERVICE="/etc/systemd/system/phonemanager-gunicorn.service"
 LOGROTATE_CONF="/etc/logrotate.d/phonemanager"
 LOG_DIR_WAS_PROVIDED=0
@@ -332,6 +333,7 @@ EOF
 
 write_nginx_config() {
   log "Writing Nginx configuration: $NGINX_CONF"
+  mkdir -p "$NGINX_SERVER_INCLUDE_DIR"
   cat > "$NGINX_CONF" <<EOF
 upstream phonemanager_backend {
     server 127.0.0.1:8000;
@@ -388,6 +390,8 @@ server {
         proxy_set_header X-Forwarded-Port \$server_port;
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
+
+    include $NGINX_SERVER_INCLUDE_DIR/*.conf;
 
   access_log $LOG_DIR/nginx-access.log;
   error_log $LOG_DIR/nginx-error.log;
