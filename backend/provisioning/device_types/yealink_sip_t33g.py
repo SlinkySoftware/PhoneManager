@@ -577,30 +577,30 @@ class YealinkSIPT33G(DeviceType):
     )
     lockdown_filename = "sipt33g-secure.cfg"
     lockdown_payload = """[GUI]
-bluetooth = 1
-Basic_LANG = 1
-phonelockswitch = 1
-softkey Label = 1
-dhcptimezone = 1
-date_and_time_general = 1
-Basic_Time_Format = 1
-Main_Contacts = 1
-features = 1
-broadsoft_calllog_list = 1
-MSG_Voice = 1
-MSG_Text = 1
-MSG = 1
-phone_unlock_pin = 1
-unlock_pin = 1
-security_connectplatform = 1
-security_packetcapture = 1
-security_screenshot = 1
-Status_IPv6 = 1
-Status_Network_IPV6 = 1
-Status_BT_MAC = 1
-Status_Qr_Code = 1
-Status_WIFI_SSID = 1
-wifi = 1"""
+bluetooth = 2
+Basic_LANG = 2
+phonelockswitch = 2
+softkey Label = 2
+dhcptimezone = 2
+date_and_time_general = 2
+Basic_Time_Format = 2
+Main_Contacts = 2
+features = 2
+broadsoft_calllog_list = 2
+MSG_Voice = 2
+MSG_Text = 2
+MSG = 2
+phone_unlock_pin = 2
+unlock_pin = 2
+security_connectplatform = 2
+security_packetcapture = 2
+security_screenshot = 2
+Status_IPv6 = 2
+Status_Network_IPV6 = 2
+Status_BT_MAC = 2
+Status_Qr_Code = 2
+Status_WIFI_SSID = 2
+wifi = 2"""
 
     def render(self, device: Any) -> str:
         # Pull decrypted device-specific configuration (includes admin password)
