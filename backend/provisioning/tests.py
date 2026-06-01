@@ -60,7 +60,7 @@ class FakeProvisioningSecurityPhone(DeviceType):
     ContentType = "text/plain"
     UserAgentPatterns = ()
     lockdown_filename = "fake-secure.cfg"
-    lockdown_payload = "[ GUI ]\nbluetooth = 1"
+    lockdown_payload = "[GUI]\nbluetooth = 1"
 
     def render(self, device):
         return "security test"
@@ -160,7 +160,7 @@ class ProvisioningViewSetTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.content.decode(), "[ GUI ]\nbluetooth = 1\n")
+        self.assertEqual(response.content.decode(), "[GUI]\nbluetooth = 1\n")
         self.assertTrue(response["Content-Type"].startswith("text/plain"))
 
     def test_security_asset_returns_t33g_renderer_payload(self):
@@ -328,6 +328,8 @@ class YealinkSIPT33GRendererTests(TestCase):
         with patch("provisioning.device_types.base.config.get", return_value=""):
             config = renderer.render(self.device)
 
+        self.assertIn("static.security.default_access_level = 0", config)
+        self.assertIn("static.security.var_enable = 1", config)
         self.assertIn(
             "static.web_item_level.url = http://pbx.example.test:8000/provision/security/sipt33g-secure.cfg",
             config,
@@ -336,6 +338,8 @@ class YealinkSIPT33GRendererTests(TestCase):
     def test_render_omits_lockdown_url_when_disabled(self):
         config = self._renderer().render(self.device)
 
+        self.assertNotIn("static.security.default_access_level = 0", config)
+        self.assertNotIn("static.security.var_enable = 1", config)
         self.assertNotIn("static.web_item_level.url =", config)
 
 
@@ -387,6 +391,8 @@ class YealinkW70BDECTRendererTests(TestCase):
         with patch("provisioning.device_types.base.config.get", return_value=""):
             config = renderer.render(self.device)
 
+        self.assertIn("static.security.default_access_level = 0", config)
+        self.assertIn("static.security.var_enable = 1", config)
         self.assertIn(
             "static.web_item_level.url = http://pbx.example.test:8000/provision/security/w70b-secure.cfg",
             config,
@@ -395,4 +401,6 @@ class YealinkW70BDECTRendererTests(TestCase):
     def test_render_omits_lockdown_url_when_disabled(self):
         config = self._renderer().render(self.device)
 
+        self.assertNotIn("static.security.default_access_level = 0", config)
+        self.assertNotIn("static.security.var_enable = 1", config)
         self.assertNotIn("static.web_item_level.url =", config)

@@ -576,7 +576,7 @@ class YealinkSIPT33G(DeviceType):
         r"Yealink[/ ]SIP[- ]?T33G",
     )
     lockdown_filename = "sipt33g-secure.cfg"
-    lockdown_payload = """[ GUI ]
+    lockdown_payload = """[GUI]
 bluetooth = 1
 Basic_LANG = 1
 phonelockswitch = 1
@@ -589,6 +589,9 @@ features = 1
 broadsoft_calllog_list = 1
 MSG_Voice = 1
 MSG_Text = 1
+MSG = 1
+phone_unlock_pin = 1
+unlock_pin = 1
 security_connectplatform = 1
 security_packetcapture = 1
 security_screenshot = 1
@@ -1027,6 +1030,8 @@ wifi = 1"""
             ]
         )
         if phone_lockdown and type(self).has_lockdown_payload():
+            config_lines.append("static.security.default_access_level = 0")
+            config_lines.append("static.security.var_enable = 1")
             config_lines.append(f"static.web_item_level.url = {self.get_lockdown_url()}")
 
         # Syslog Configuration
