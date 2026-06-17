@@ -530,7 +530,7 @@ class GrandstreamHT812(DeviceType):
 
         mac_clean = self._mac_nocolon(device.mac_address)
         if not dhcp_hostname:
-            dhcp_hostname = f"grandstream_{mac_clean[-6:]}"
+            dhcp_hostname = f"grandstream-{mac_clean[-6:]}"
 
         provisioning_base_url = self.get_provisioning_base_url()
 
@@ -608,7 +608,7 @@ class GrandstreamHT812(DeviceType):
         line_blocks.append(
             dedent(
                 f"""
-                <P4060>{line1.registration_account}</P4060>
+                <P4060>{line1.directory_number}</P4060>
                 <P4090>{line1.registration_account}</P4090>
                 <P4180>{self._line_display_name(line1)}</P4180>
                 <P4120>{line1.registration_password}</P4120>
@@ -621,7 +621,7 @@ class GrandstreamHT812(DeviceType):
             line_blocks.append(
                 dedent(
                     f"""
-                    <P4061>{line2.registration_account}</P4061>
+                    <P4061>{line2.directory_number}</P4061>
                     <P4091>{line2.registration_account}</P4091>
                     <P4181>{self._line_display_name(line2)}</P4181>
                     <P4121>{line2.registration_password}</P4121>
@@ -640,7 +640,7 @@ class GrandstreamHT812(DeviceType):
         profile_block = dedent(
             f"""
             <P130>{transport_xml_value}</P130>
-            <P5004>{local_rtp_port}</P5004>
+            <P39>{local_rtp_port}</P39>
             <P84>{sip_keepalive_interval}</P84>
             <P2397>{'1' if enable_sip_keepalive else '0'}</P2397>
             <P138>{registration_retry_interval}</P138>
@@ -653,6 +653,7 @@ class GrandstreamHT812(DeviceType):
             <P967>{getattr(secondary, 'host', '')}</P967>
             <P5046>{sip_dscp}</P5046>
             <P5050>{rtp_dscp}</P5050>
+            <P29071>Grandstream HT812-{mac_clean}</P29071>
             """
         ).strip()
 
@@ -667,8 +668,11 @@ class GrandstreamHT812(DeviceType):
         network_block = dedent(
             f"""
             <P146>{dhcp_hostname}</P146>
+            <P148>HT8XX</P148>
             <P901>{http_port}</P901>
             <P27010>{https_port}</P27010>
+            <P30>{site.primary_ntp_ip or ''}</P30>
+            <P64>EST-10EDT-11,M10.5.0/02:00:00,M3.5.0/03:00:00</P64>
             """
         ).strip()
 
@@ -725,12 +729,10 @@ class GrandstreamHT812(DeviceType):
             if dialplan_entries:
                 # Grandstream dial plan format: { rule1 | rule2 | rule3 }
                 dialplan_string = "{ " + " | ".join(dialplan_entries) + " }"
-                # P2396 is the dial plan P-code for FXS1, P2398 for FXS2
-                # We'll apply the same dial plan to both ports
+                # P4200 is the dial plan P-code for both lines (applies to HT812).
                 dialplan_block = dedent(
                     f"""
-                    <P2396>{dialplan_string}</P2396>
-                    <P2398>{dialplan_string}</P2398>
+                    <P4200>{dialplan_string}</P4200>
                     """
                 ).strip()
 
