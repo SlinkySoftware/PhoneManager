@@ -726,7 +726,16 @@ class GrandstreamHT812(DeviceType):
             ).strip()
 
         # Admin password
-        admin_block = f"<P2>{admin_password}</P2>" if admin_password else ""
+        admin_block = dedent(
+            """
+ 		    <P28788>0</P28788>
+ 		    <P28790>4</P28790>
+ 		    <P28791>1</P28791>
+ 		    <P28792>15</P28792>
+            """
+        ).strip()
+
+        admin_block += f"<P2>{admin_password}</P2>" if admin_password else ""
 
         # Default Options
         default_options_block = dedent(
