@@ -620,6 +620,7 @@ class GrandstreamHT812(DeviceType):
                 <P4090>{line1.registration_account}</P4090>
                 <P4180>{self._line_display_name(line1)}</P4180>
                 <P4120>{line1.registration_password}</P4120>
+                <P4595>1</P4595>
                 """
             ).strip()
         )
@@ -633,9 +634,12 @@ class GrandstreamHT812(DeviceType):
                     <P4091>{line2.registration_account}</P4091>
                     <P4181>{self._line_display_name(line2)}</P4181>
                     <P4121>{line2.registration_password}</P4121>
+                    <P4596>1</P4596>
                     """
                 ).strip()
             )
+        else:
+            line_blocks.append(dedent("<P4596>0</P4596>").strip())
 
         # Offhook autodial numbers (per-port)
         offhook_block = ""
