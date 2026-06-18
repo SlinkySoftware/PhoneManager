@@ -661,6 +661,10 @@ class GrandstreamHT812(DeviceType):
             f"""
             <P192>{provisioning_base_url}</P192>
             <P237>{provisioning_base_url}</P237>
+            <P22296>2</P22296>
+            <P285>2</P285>
+            <P8458>1</P8458>
+            <P8459>6</P8459>
             {f'<P212>{provisioning_protocol}</P212>' if provisioning_protocol else ''}
             """
         ).strip()
@@ -672,6 +676,7 @@ class GrandstreamHT812(DeviceType):
             <P901>{http_port}</P901>
             <P27010>{https_port}</P27010>
             <P30>{site.primary_ntp_ip or ''}</P30>
+            <P8333>{site.secondary_ntp_ip or ''}</P8333>
             <P64>EST-10EDT-11,M10.5.0/02:00:00,M3.5.0/03:00:00</P64>
             """
         ).strip()
@@ -715,6 +720,68 @@ class GrandstreamHT812(DeviceType):
         # Admin password
         admin_block = f"<P2>{admin_password}</P2>" if admin_password else ""
 
+        # Default Options
+        default_options_block = dedent(
+            """
+                <P1409>0</P1409>
+                <P1683>1</P1683>
+                <P186>1</P186>
+                <P191>0</P191>
+                <P22293>12</P22293>
+                <P228>1</P228>
+                <P2339>2</P2339>
+                <P24059>0</P24059>
+                <P24060>0</P24060>
+                <P24061>0</P24061>
+                <P24062>0</P24062>
+                <P24063>0</P24063>
+                <P24064>0</P24064>
+                <P24065>0</P24065>
+                <P24066>0</P24066>
+                <P24067>0</P24067>
+                <P24068>0</P24068>
+                <P24069>0</P24069>
+                <P24070>0</P24070>
+                <P24071>0</P24071>
+                <P24072>0</P24072>
+                <P24073>0</P24073>
+                <P24074>0</P24074>
+                <P24075>0</P24075>
+                <P24076>0</P24076>
+                <P24077>0</P24077>
+                <P24078>0</P24078>
+                <P24079>0</P24079>
+                <P24084>0</P24084>
+                <P24085>0</P24085>
+                <P24087>0</P24087>
+                <P24089>0</P24089>
+                <P243>1</P243>
+                <P247>4</P247>
+                <P249>4</P249>
+                <P258>1</P258>
+                <P28117>10</P28117>
+                <P285>4</P285>
+                <P28839>1</P28839>
+                <P29090>2</P29090>
+                <P29096>2</P29096>
+                <P29098>1</P29098>
+                <P4234>1</P4234>
+                <P4360>1</P4360>
+                <P4437>1</P4437>
+                <P4506>0</P4506>
+                <P60083>0</P60083>
+                <P63>1</P63>
+                <P64>EST-10EDT-11,M10.1.0/02:00:00,M4.1.0/03:00:00</P64>
+                <P714>1</P714>
+                <P81>1</P81>
+                <P8459>6</P8459>
+                <P853>7</P853>
+                <P8536>8</P8536>
+                <P854>11</P854>
+                <P91>1</P91>
+            """
+        ).strip()
+
         # Dial plan conversion (site-level)
         dialplan_block = ""
         dial_plan = getattr(site, "dial_plan", None)
@@ -750,6 +817,7 @@ class GrandstreamHT812(DeviceType):
         self._append_section(config_lines, "SIP profile basics", sip_profile_block)
         self._append_section(config_lines, "Line identities for FXS ports", line_identity_block)
         self._append_section(config_lines, "SNMP settings", snmp_block)
+        self._append_section(config_lines, "Default options (not user-configurable)", default_options_block)
         self._append_section(config_lines, "Administrative password", admin_block)
         self._append_section(config_lines, "Dial plan transformation rules", dialplan_block)
 
