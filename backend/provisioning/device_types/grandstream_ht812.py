@@ -451,10 +451,10 @@ class GrandstreamHT812(DeviceType):
                 if replacement_prefix:
                     if prefix:
                     # Pattern like: 0([23]xxx) → +61$1 becomes <0=+61>[23]xxx
-                        result = f"<{prefix}={replacement_prefix}>{converted_captured}"
+                        result = f"&lt;{prefix}={replacement_prefix}&gt;{converted_captured}"
                     else:
                     # Pattern like: ([467]xxx) → +612$1 becomes <=+612>[467]xxx
-                        result = f"<={replacement_prefix}>{converted_captured}"
+                        result = f"&lt;={replacement_prefix}&gt;{converted_captured}"
                     return self._add_grandstream_timeout(result, converted_captured)
 
                 passthrough_pattern = converted_captured if not prefix else self._convert_grandstream_match(inp)
@@ -472,13 +472,13 @@ class GrandstreamHT812(DeviceType):
             # Pure prepend case
             prefix_to_add = self._escape_grandstream_replacement(out[:-len(inp)])
             if prefix_to_add:
-                result = f"<={prefix_to_add}>{converted_inp}"
+                result = f"&lt;={prefix_to_add}&gt;{converted_inp}"
             else:
                 result = converted_inp
         else:
             # Direct replacement case
             replacement = self._escape_grandstream_replacement(out)
-            result = f"<={replacement}>{converted_inp}" if replacement else converted_inp
+            result = f"&lt;={replacement}&gt;{converted_inp}" if replacement else converted_inp
 
         return self._add_grandstream_timeout(result, converted_inp)
 
