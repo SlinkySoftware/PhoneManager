@@ -399,6 +399,17 @@ class GrandstreamHT812(DeviceType):
         }
         return [mapping[c] for c in codec_order if c in mapping]
 
+    def _convert_grandstream_match(self, pattern: str) -> str:
+        return pattern.replace("*", "+").replace("X", "x")
+
+    def _escape_grandstream_replacement(self, replacement: str) -> str:
+        return re.sub(r"(?<!\\)\+", r"\\+", replacement)
+
+    def _add_grandstream_timeout(self, entry: str, match_pattern: str) -> str:
+        if "x+" in match_pattern and not entry.endswith("T"):
+            return f"{entry}T"
+        return entry
+
     def _convert_to_grandstream_dialplan(self, input_regex: str, output_regex: str) -> str:
         """Convert standard regex dial plan rule to Grandstream syntax.
         
@@ -418,61 +429,58 @@ class GrandstreamHT812(DeviceType):
             - Fixed prefix → use <prefix=replacement> or <=prepend>
             - T suffix for variable-length patterns
         """
-        if not input_regex or not output_regex:
+        if not input_regex:
             return ""
-        
+
         # Remove anchors
         inp = input_regex.replace("^", "").replace("$", "")
-        out = output_regex
-        
+        out = output_regex or ""
+
         # Check for capture group pattern: prefix(pattern) → replacement$1
         capture_match = re.match(r'^([^(]*)\(([^)]+)\)$', inp)
-        
+
         if capture_match:
             prefix = capture_match.group(1)
             captured = capture_match.group(2)
-            
+            converted_captured = self._convert_grandstream_match(captured)
+
             # Check if output uses $1
             if "$1" in out:
-                replacement_prefix = out.replace("$1", "")
-                
-                # Convert captured pattern carefully:
-                # First handle * → + conversion, then lowercase X
-                # This ensures XXX* becomes xxx+ not xxxx+
-                converted_captured = captured.replace("*", "+").replace("X", "x")
-                
-                if prefix:
+                replacement_prefix = self._escape_grandstream_replacement(out.replace("$1", ""))
+
+                if replacement_prefix:
+                    if prefix:
                     # Pattern like: 0([23]xxx) → +61$1 becomes <0=+61>[23]xxx
-                    result = f"<{prefix}={replacement_prefix}>{converted_captured}"
-                else:
+                        result = f"<{prefix}={replacement_prefix}>{converted_captured}"
+                    else:
                     # Pattern like: ([467]xxx) → +612$1 becomes <=+612>[467]xxx
-                    result = f"<={replacement_prefix}>{converted_captured}"
-                
-                # Add T suffix ONLY for variable-length patterns (contains x+)
-                # T = inter-digit timeout for patterns that can match varying lengths
-                if "x+" in converted_captured:
-                    result += "T"
-                
-                return result
-        
+                        result = f"<={replacement_prefix}>{converted_captured}"
+                    return self._add_grandstream_timeout(result, converted_captured)
+
+                passthrough_pattern = converted_captured if not prefix else self._convert_grandstream_match(inp)
+                return self._add_grandstream_timeout(passthrough_pattern, passthrough_pattern)
+
         # Simple prepend case: no capture groups, just prepend prefix
         # Example: 000 → +61000 becomes <=+61>000
-        converted_inp = inp.replace("*", "+").replace("X", "x")
-        
+        converted_inp = self._convert_grandstream_match(inp)
+
+        if out == "$1" or not out:
+            return self._add_grandstream_timeout(converted_inp, converted_inp)
+
         # Check if output contains the input pattern
-        if converted_inp in out.replace("x", "X"):
+        if out.endswith(inp):
             # Pure prepend case
-            prefix_to_add = out.replace(inp, "").replace(converted_inp.upper(), "")
-            result = f"<={prefix_to_add}>{converted_inp}"
+            prefix_to_add = self._escape_grandstream_replacement(out[:-len(inp)])
+            if prefix_to_add:
+                result = f"<={prefix_to_add}>{converted_inp}"
+            else:
+                result = converted_inp
         else:
             # Direct replacement case
-            result = f"<={out}>{converted_inp}"
-        
-        # Add T suffix for variable-length patterns
-        if "x+" in result and not result.endswith("T"):
-            result += "T"
-        
-        return result
+            replacement = self._escape_grandstream_replacement(out)
+            result = f"<={replacement}>{converted_inp}" if replacement else converted_inp
+
+        return self._add_grandstream_timeout(result, converted_inp)
 
     def render(self, device: Any) -> str:
         line1 = device.line_1
@@ -792,10 +800,13 @@ class GrandstreamHT812(DeviceType):
                 entry = self._convert_to_grandstream_dialplan(rule.input_regex, rule.output_regex)
                 if entry:
                     dialplan_entries.append(entry)
-            
+
+            dialplan_entries = [entry for entry in dialplan_entries if entry != "x+"]
+            dialplan_entries.append("x+")
+
             if dialplan_entries:
-                # Grandstream dial plan format: { rule1 | rule2 | rule3 }
-                dialplan_string = "{ " + " | ".join(dialplan_entries) + " }"
+                # Grandstream dial plan format: {rule1|rule2|rule3|x+}
+                dialplan_string = "{" + "|".join(dialplan_entries) + "}"
                 # P4200 is the dial plan P-code for both lines (applies to HT812).
                 dialplan_block = dedent(
                     f"""

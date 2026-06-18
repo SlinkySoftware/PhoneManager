@@ -9,7 +9,7 @@ from django.db import DatabaseError
 from django.test import RequestFactory, TestCase
 from django.urls import reverse
 
-from core.models import Device, DeviceTypeConfig, Line, SIPServer, Site
+from core.models import Device, DeviceTypeConfig, DialPlan, DialPlanRule, Line, SIPServer, Site
 from provisioning.device_types.base import DeviceType
 from provisioning.device_types.grandstream_ht812 import GrandstreamHT812
 from provisioning.device_types.yealink_sip_t33g import YealinkSIPT33G
@@ -205,8 +205,8 @@ class GrandstreamHT812RendererTests(TestCase):
             enabled=True,
         )
 
-    def test_render_includes_core_sip_profile_fields(self):
-        renderer = GrandstreamHT812(
+    def _renderer(self) -> GrandstreamHT812:
+        return GrandstreamHT812(
             TypeID=GrandstreamHT812.TypeID,
             Manufacturer=GrandstreamHT812.Manufacturer,
             Model=GrandstreamHT812.Model,
@@ -217,6 +217,9 @@ class GrandstreamHT812RendererTests(TestCase):
             ContentType=GrandstreamHT812.ContentType,
             UserAgentPatterns=GrandstreamHT812.UserAgentPatterns,
         )
+
+    def test_render_includes_core_sip_profile_fields(self):
+        renderer = self._renderer()
         renderer.request = self.factory.get("/provision/cfgc074adde969a.xml", HTTP_HOST="pbx.example.test:8000")
 
         with patch("provisioning.device_types.base.config.get", return_value=""):
@@ -229,6 +232,73 @@ class GrandstreamHT812RendererTests(TestCase):
         self.assertIn("<P4090>36503</P4090>", xml)
         self.assertIn("<P4180>Reception 36503</P4180>", xml)
         self.assertIn("<P4120>secret</P4120>", xml)
+
+    def test_convert_to_grandstream_dialplan_escapes_plus_and_skips_empty_substitutions(self):
+        renderer = self._renderer()
+
+        self.assertEqual(
+            renderer._convert_to_grandstream_dialplan("0([234]XXXX)", "+61$1"),
+            r"<0=\+61>[234]xxxx",
+        )
+        self.assertEqual(
+            renderer._convert_to_grandstream_dialplan("(365XX)", "$1"),
+            "365xx",
+        )
+        self.assertEqual(
+            renderer._convert_to_grandstream_dialplan("(1[38]XXXX*)", "+61$1"),
+            r"<=\+61>1[38]xxxx+T",
+        )
+        self.assertEqual(
+            renderer._convert_to_grandstream_dialplan("0011(XXXXXXX*)", "+$1"),
+            r"<0011=\+>xxxxxxx+T",
+        )
+
+    def test_render_dialplan_uses_device_compatible_syntax(self):
+        dial_plan = DialPlan.objects.create(name="Grandstream", description="Grandstream test plan")
+        DialPlanRule.objects.create(dial_plan=dial_plan, input_regex="^000$", output_regex="+61000", sequence_order=0)
+        DialPlanRule.objects.create(
+            dial_plan=dial_plan,
+            input_regex="^0([23478]XXXXXXXX)$",
+            output_regex="+61$1",
+            sequence_order=1,
+        )
+        DialPlanRule.objects.create(
+            dial_plan=dial_plan,
+            input_regex="^(1[38]XXXX*)$",
+            output_regex="+61$1",
+            sequence_order=2,
+        )
+        DialPlanRule.objects.create(
+            dial_plan=dial_plan,
+            input_regex="^0011(XXXXXXX*)$",
+            output_regex="+$1",
+            sequence_order=3,
+        )
+        DialPlanRule.objects.create(
+            dial_plan=dial_plan,
+            input_regex="^([98746]XXXXXXX)$",
+            output_regex="+612$1",
+            sequence_order=4,
+        )
+        DialPlanRule.objects.create(
+            dial_plan=dial_plan,
+            input_regex="^(365XX)$",
+            output_regex="$1",
+            sequence_order=5,
+        )
+        self.site.dial_plan = dial_plan
+        self.site.save(update_fields=["dial_plan"])
+
+        renderer = self._renderer()
+        renderer.request = self.factory.get("/provision/cfgc074adde969a.xml", HTTP_HOST="pbx.example.test:8000")
+
+        with patch("provisioning.device_types.base.config.get", return_value=""):
+            xml = renderer.render(self.device)
+
+        self.assertIn(
+            r"<P4200>{<=\+61>000|<0=\+61>[23478]xxxxxxxx|<=\+61>1[38]xxxx+T|<0011=\+>xxxxxxx+T|<=\+612>[98746]xxxxxxx|365xx|x+}</P4200>",
+            xml,
+        )
 
 
 class YealinkSIPT33GRendererTests(TestCase):
