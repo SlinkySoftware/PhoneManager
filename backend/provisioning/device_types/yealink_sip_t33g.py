@@ -559,6 +559,36 @@ DEVICE_OPTIONS: Dict[str, Any] = {
                 }
             ]
         },
+		{
+            "friendlyName": "Speed Dial",
+            "uiOrder": 6,
+            "options": [
+                {
+                    "optionId": "override_line_4_as_speed_dial",
+                    "friendlyName": "Override Line 4 as Speed Dial",
+                    "default": False,
+                    "mandatory": False,
+                    "type": "boolean",
+                    "uiOrder": 1,
+                },
+                {
+                    "optionId": "speed_dial_name",
+                    "friendlyName": "Speed Dial Name",
+                    "default": "",
+                    "mandatory": False,
+                    "type": "text",
+                    "uiOrder": 2,
+                },
+                {
+                    "optionId": "speed_dial_number",
+                    "friendlyName": "Speed Dial Number",
+                    "default": "",
+                    "mandatory": False,
+                    "type": "text",
+                    "uiOrder": 3,
+                },
+            ]
+        },
 	]
 }
 
@@ -966,6 +996,9 @@ wifi = 2"""
 
         # Device-only options
         admin_password = opt("admin_password", "")
+        override_line_4_as_speed_dial = bool(opt("override_line_4_as_speed_dial", False))
+        speed_dial_name = str(opt("speed_dial_name", "") or "")
+        speed_dial_number = str(opt("speed_dial_number", "") or "")
 
         # Hard Coded Defaults
         ntp_interval = 1440  # Yealink NTP interval default
@@ -990,6 +1023,9 @@ wifi = 2"""
         # Collect lines (line_1 + additional lines)
         lines = list(device.get_ordered_lines())
         lines = lines[: self.NumberOfLines]
+        if override_line_4_as_speed_dial:
+            # Reserve key 4 for speed dial without changing the stored line assignments.
+            lines = lines[:3]
 
 
 
@@ -1235,5 +1271,16 @@ wifi = 2"""
         # Disable all remaining account slots
         for idx in range(len(lines) + 1, self.NumberOfLines + 1):
             config_lines.append(f"account.{idx}.enable = 0")
+
+        if override_line_4_as_speed_dial:
+            config_lines.extend(
+                [
+                    f"linekey.4.label = {speed_dial_name}",
+                    "linekey.4.line = 0",
+                    f"linekey.4.shortlabel = {speed_dial_name}",
+                    "linekey.4.type = 13",
+                    f"linekey.4.value = {speed_dial_number}",
+                ]
+            )
 
         return "\n".join(config_lines)

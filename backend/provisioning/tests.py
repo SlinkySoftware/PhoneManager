@@ -412,6 +412,128 @@ class YealinkSIPT33GRendererTests(TestCase):
         self.assertNotIn("static.security.var_enable = 1", config)
         self.assertNotIn("static.web_item_level.url =", config)
 
+    def _assign_four_lines(self) -> list[Line]:
+        """Assign four lines in explicit order to exercise the fourth account."""
+        extra_lines = [
+            Line.objects.create(
+                name=f"Line {number}",
+                directory_number=f"100{number}",
+                registration_account=f"100{number}",
+                registration_password=f"line-{number}-password",
+            )
+            for number in range(2, 5)
+        ]
+        self.device.lines.set(extra_lines)
+        self.device.line_configuration = {Device.LINE_ORDER_KEY: [line.pk for line in extra_lines]}
+        self.device.save(update_fields=["line_configuration"])
+        return [self.line, *extra_lines]
+
+    def test_speed_dial_options_are_device_specific_with_expected_defaults(self):
+        """Expose speed dial fields only in the device-specific schema."""
+        device_options = {
+            option["optionId"]: option
+            for section in YealinkSIPT33G.DeviceSpecificOptions["sections"]
+            for option in section["options"]
+        }
+        common_option_ids = {
+            option["optionId"]
+            for section in YealinkSIPT33G.CommonOptions["sections"]
+            for option in section["options"]
+        }
+        expected_options = {
+            "override_line_4_as_speed_dial": ("Override Line 4 as Speed Dial", "boolean", False),
+            "speed_dial_name": ("Speed Dial Name", "text", ""),
+            "speed_dial_number": ("Speed Dial Number", "text", ""),
+        }
+        for option_id, (label, option_type, default) in expected_options.items():
+            with self.subTest(option_id=option_id):
+                option = device_options[option_id]
+                self.assertEqual(option["friendlyName"], label)
+                self.assertEqual(option["type"], option_type)
+                self.assertEqual(option["default"], default)
+                self.assertFalse(option["mandatory"])
+                self.assertNotIn(option_id, common_option_ids)
+
+    def test_render_speed_dial_overrides_fourth_line(self):
+        """Replace account 4 with speed dial while preserving accounts 1 through 3."""
+        lines = self._assign_four_lines()
+        self.device.set_encrypted_device_config(
+            {
+                "override_line_4_as_speed_dial": True,
+                "speed_dial_name": "Help Desk",
+                "speed_dial_number": "+61123456789",
+            }
+        )
+        self.device.save(update_fields=["device_specific_configuration"])
+
+        config = self._renderer().render(self.device)
+        config_lines = config.splitlines()
+
+        self.assertEqual(
+            [entry for entry in config_lines if entry.startswith("linekey.4.")],
+            [
+                "linekey.4.label = Help Desk",
+                "linekey.4.line = 0",
+                "linekey.4.shortlabel = Help Desk",
+                "linekey.4.type = 13",
+                "linekey.4.value = +61123456789",
+            ],
+        )
+        self.assertEqual(
+            [entry for entry in config_lines if entry.startswith("account.4.")],
+            ["account.4.enable = 0"],
+        )
+        self.assertNotIn(lines[3].registration_password, config)
+        for number, line in enumerate(lines[:3], start=1):
+            self.assertIn(f"account.{number}.enable = 1", config_lines)
+            self.assertIn(f"account.{number}.user_name = {line.directory_number}", config_lines)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.get_ordered_lines(), lines)
+
+    def test_render_omits_speed_dial_when_disabled_or_unset(self):
+        """Keep all four SIP accounts when the override is false or missing."""
+        lines = self._assign_four_lines()
+        for override in ({}, {"override_line_4_as_speed_dial": False}):
+            with self.subTest(override=override):
+                self.device.set_encrypted_device_config(
+                    {"speed_dial_name": "Help Desk", "speed_dial_number": "1000", **override}
+                )
+                self.device.save(update_fields=["device_specific_configuration"])
+
+                config = self._renderer().render(self.device)
+                config_lines = config.splitlines()
+
+                self.assertNotIn("linekey.4.", config)
+                self.assertIn("account.4.enable = 1", config_lines)
+                self.assertIn(f"account.4.user_name = {lines[3].directory_number}", config_lines)
+                self.assertIn(f"account.4.password = {lines[3].registration_password}", config_lines)
+                self.assertNotIn("account.4.enable = 0", config_lines)
+
+    def test_render_speed_dial_without_fourth_line_and_with_blank_defaults(self):
+        """Render speed dial without four assigned lines, even when text fields are blank."""
+        for text_options in (
+            {"speed_dial_name": "Reception", "speed_dial_number": "1000"},
+            {},
+        ):
+            with self.subTest(text_options=text_options):
+                self.device.set_encrypted_device_config(
+                    {"override_line_4_as_speed_dial": True, **text_options}
+                )
+                self.device.save(update_fields=["device_specific_configuration"])
+
+                config_lines = self._renderer().render(self.device).splitlines()
+
+                name = text_options.get("speed_dial_name", "")
+                number = text_options.get("speed_dial_number", "")
+                self.assertIn(f"linekey.4.label = {name}", config_lines)
+                self.assertIn("linekey.4.line = 0", config_lines)
+                self.assertIn(f"linekey.4.shortlabel = {name}", config_lines)
+                self.assertIn("linekey.4.type = 13", config_lines)
+                self.assertIn(f"linekey.4.value = {number}", config_lines)
+                self.assertIn("account.1.enable = 1", config_lines)
+                for account in range(2, 5):
+                    self.assertIn(f"account.{account}.enable = 0", config_lines)
+
 
 class YealinkW70BDECTRendererTests(TestCase):
     """Exercise W70B-specific rendering branches."""

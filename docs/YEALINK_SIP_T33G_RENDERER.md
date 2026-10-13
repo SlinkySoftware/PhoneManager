@@ -136,6 +136,34 @@ URL expansion details:
 
 ---
 
+## Speed Dial (Line Key 4)
+
+The **Speed Dial** section contains device-level options only, not common options:
+
+| Device Option | UI Label | Type | Default |
+|---------------|----------|------|---------|
+| `override_line_4_as_speed_dial` | Override Line 4 as Speed Dial | Boolean | `false` |
+| `speed_dial_name` | Speed Dial Name | Text | Blank |
+| `speed_dial_number` | Speed Dial Number | Text | Blank |
+
+When the override is enabled, the fourth assigned SIP line is ignored during rendering and
+`account.4.enable = 0` is generated. Accounts 1 through 3 retain their normal configuration.
+Stored line assignments are unchanged. The speed-dial key is generated even if fewer than
+four SIP lines are assigned or the optional name and number are blank.
+
+| Configuration Parameter | Value | Source |
+|------------------------|-------|--------|
+| `linekey.4.label` | Speed Dial Name | Device Option: `speed_dial_name` |
+| `linekey.4.line` | `0` | Hard-coded |
+| `linekey.4.shortlabel` | Speed Dial Name | Device Option: `speed_dial_name` |
+| `linekey.4.type` | `13` | Hard-coded (speed dial) |
+| `linekey.4.value` | Speed Dial Number | Device Option: `speed_dial_number` |
+
+When the override is disabled or unset, none of these `linekey.4` settings are generated,
+and the fourth SIP line is rendered normally if assigned.
+
+---
+
 ## Voice Quality (RTCP-XR)
 
 | Configuration Parameter | Value | Source | Notes |
@@ -292,6 +320,9 @@ Codecs not selected in `preferred_codecs` are explicitly disabled.
 
 **Features:**
 - `call_waiting`, `missed_calllog_enable`, `save_call_log`, `use_phone_services`
+
+**Speed Dial:**
+- `override_line_4_as_speed_dial`, `speed_dial_name`, `speed_dial_number`
 
 **Administrative:**
 - `admin_password`, `voice_country`
