@@ -129,7 +129,7 @@ sudo LOG_DIR=/srv/phonemanager/logs ./install-rhel-baremetal.sh
 
 What it configures:
 
-- Installs RHEL dependencies (Python 3.12+, compiler/libs, Node.js/npm, nginx)
+- Installs RHEL dependencies (Python 3.12+, compiler/libs, Node.js 22.22+ or another supported Quasar major, npm, nginx)
 - Creates backend virtual environment and installs Python modules
 - Installs frontend Node modules and builds Quasar (`frontend/dist/spa`)
 - Writes externalized backend env file at `/etc/phonemanager/backend.env`

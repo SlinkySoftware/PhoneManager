@@ -2,6 +2,9 @@
   "name": "phone-provisioning-manager-frontend",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "^22.22.0 || ^24 || ^26 || ^28 || ^30"
+  },
   "scripts": {
     "dev": "quasar dev",
     "build": "quasar build",
@@ -12,7 +15,7 @@
     "pinia": "^3.0.4",
     "quasar": "^2.35.1",
     "vue": "^3.5.44",
-    "vue-router": "^4.6.4"
+    "vue-router": "^5.4.0"
   },
   "devDependencies": {
     "@quasar/app-vite": "^3.10.2",
