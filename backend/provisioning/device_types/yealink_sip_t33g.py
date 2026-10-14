@@ -1229,6 +1229,9 @@ wifi = 2"""
                     f"account.{idx}.sip_server.2.failback_timeout = {failback_duration if line_secondary else ''}",
                     f"linekey.{idx}.type = 15",
                     f"linekey.{idx}.line = {idx}",
+                    f"linekey.{idx}.label = ",
+                    f"linekey.{idx}.shortlabel = ",
+                    f"linekey.{idx}.value = 0",
                 ]
             )
 
