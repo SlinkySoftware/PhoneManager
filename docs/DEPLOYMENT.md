@@ -38,7 +38,7 @@ cd ..
 
 **Service URLs:**
 - Backend API: http://localhost:8000/api
-- Frontend: http://localhost:5173
+- Frontend: http://localhost:9000
 - Admin: http://localhost:8000/admin
 
 **Log Files:**
@@ -94,8 +94,50 @@ DATABASE_URL=postgresql://...         # Postgres connection string
 POSTGRES_PASSWORD=<strong-password>   # DB password
 PROVISIONING_BASE_URL=https://your.domain.com/provision  # Base URL used by renderers
 ENCRYPTION_KEY=<strong-random>         # Used for reversible encryption at rest
-VITE_API_BASE=http://localhost:8000   # Frontend API base URL
 ```
+
+The Docker frontend runs the Quasar development server for testing. Compose sets
+`VITE_API_BASE=/api` and `API_PROXY_TARGET=http://backend:8000`, so browsers use the
+frontend origin and the frontend server proxies API requests over the container
+network. The published backend port is not embedded in browser URLs.
+
+## Frontend API Routing
+
+The frontend defaults to `/api` for all API requests, including local/LDAP login
+and SAML redirects. This keeps requests on the same host, scheme, and port as the
+page: a page at `https://phones.example.com/devices` requests
+`https://phones.example.com/api/devices/`, not the browser computer's localhost.
+
+- **Production:** nginx serves the SPA and proxies `/api/` to Gunicorn, preserving
+  the `/api/` prefix. Same-origin API requests do not require extra CORS origins.
+- **Development:** Quasar proxies `/api/` to `http://127.0.0.1:8000`. Set
+  `API_PROXY_TARGET` before starting the dev server to use a different backend.
+- **Separate API origin (optional):** set `VITE_API_BASE` to the full API base URL,
+  including `/api`, and configure Django CORS for that frontend origin.
+
+Quasar is configured to expose only `VITE_*` client environment variables and to
+load the matching development or production dotenv files. For production,
+`frontend/.env.production` can contain:
+
+```env
+VITE_API_BASE=/api
+```
+
+Frontend variables are compiled into the JavaScript by `npm run build`. Changing
+a production environment variable or restarting Gunicorn/nginx does not update
+an existing SPA bundle. Rebuild and deploy `frontend/dist/spa` after changing
+`VITE_API_BASE`; refresh the browser to load the new assets. A build-shell
+`VITE_API_BASE` value takes precedence over dotenv files.
+
+### Existing Deployments Requesting Localhost
+
+1. Update the checkout to include the routing fix.
+2. Remove any old `VITE_API_BASE=http://localhost:8000/api` override from the build
+    environment or frontend dotenv files, or replace it with `/api`.
+3. Run the RHEL upgrade workflow below, or rebuild the frontend and deploy the
+    resulting `frontend/dist/spa` directory served by nginx.
+4. Hard-refresh the browser and confirm API requests use the public host with an
+    `/api/` path in the browser's Network panel.
 
 ## Production Deployment (Bare Metal)
 

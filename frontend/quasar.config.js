@@ -1,7 +1,10 @@
-/*
- * Quasar Framework configuration for @quasar/app-vite
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (c) 2026 Slinky Software
  */
-export default function () {
+
+import process from 'node:process';
+
+export default function (ctx) {
   return {
     framework: {
       config: {
@@ -18,11 +21,24 @@ export default function () {
       plugins: []
     },
     build: {
-      vueRouterMode: 'history'
+      vueRouterMode: 'history',
+      // Quasar manages dotenv loading itself rather than using Vite's defaults.
+      env: {
+        clientPrefix: 'VITE_',
+        file: ctx.prod
+          ? ['.env.production', '.env.production.local']
+          : ['.env.development', '.env.development.local']
+      }
     },
     devServer: {
       port: 9000,
-      open: false
+      open: false,
+      proxy: {
+        '/api/': {
+          target: process.env.API_PROXY_TARGET || 'http://127.0.0.1:8000',
+          changeOrigin: true
+        }
+      }
     }
   };
 }

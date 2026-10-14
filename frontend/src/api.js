@@ -4,17 +4,25 @@
 
 import axios from 'axios';
 import { useAuthStore } from './stores/auth';
-import { useRouter } from 'vue-router';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE || '/api';
 
-export const createApiClient = () => {
+/**
+ * Create a client using the shared API URL, without session handling for public authentication requests.
+ * @param {{ authenticated?: boolean }} options Client authentication options.
+ * @returns {import('axios').AxiosInstance} Configured API client.
+ */
+export const createApiClient = ({ authenticated = true } = {}) => {
   const api = axios.create({
     baseURL: API_BASE_URL,
     headers: {
       'Content-Type': 'application/json'
     }
   });
+
+  if (!authenticated) {
+    return api;
+  }
 
   // Request interceptor: Add auth token to headers
   api.interceptors.request.use(

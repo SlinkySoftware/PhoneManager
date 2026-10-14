@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (c) 2026 Slinky Software
+
 FROM node:24-alpine AS build
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json* frontend/yarn.lock* ./
@@ -9,4 +12,4 @@ FROM node:24-alpine
 WORKDIR /app
 COPY --from=build /app /app
 EXPOSE 9000
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "9000"]
+CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0", "--port", "9000"]

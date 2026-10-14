@@ -87,11 +87,12 @@
 import { computed, ref, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
-import axios from 'axios';
+import { createApiClient } from '../api';
 
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
+const api = createApiClient({ authenticated: false });
 
 const credentials = ref({
   username: '',
@@ -116,9 +117,6 @@ const submitLabel = computed(() => (
 // Check if SSO is enabled
 const checkSSOConfig = async () => {
   try {
-    const api = axios.create({
-      baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
-    });
     const response = await api.get('/auth/config/');
     ssoEnabled.value = response.data.sso_enabled;
     ldapEnabled.value = response.data.ldap_enabled;
@@ -138,10 +136,6 @@ const handleLogin = async () => {
   isLoading.value = true;
 
   try {
-    const api = axios.create({
-      baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
-    });
-
     const endpoint = selectedPasswordAuthMethod.value === 'ldap' ? '/auth/ldap/login/' : '/auth/login/';
     const response = await api.post(endpoint, {
       username: credentials.value.username,
@@ -175,8 +169,7 @@ const handleLogin = async () => {
 
 const handleSSOLogin = () => {
   // Redirect to SAML login endpoint
-  const baseURL = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api';
-  window.location.href = `${baseURL}/auth/saml/login/`;
+  window.location.href = api.getUri({ url: '/auth/saml/login/' });
 };
 
 // Handle SSO callback with token in URL

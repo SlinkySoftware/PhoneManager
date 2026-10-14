@@ -48,17 +48,25 @@ python manage.py createadmin
 
 ### Frontend Configuration
 
-If your frontend dev server runs on a different port, set the API base URL:
+The default API base URL is `/api`, relative to the frontend origin. Production
+nginx proxies this path to Django; the Quasar development server proxies it to
+`http://127.0.0.1:8000`. Local login, LDAP login, and SAML redirects all use the same
+API configuration.
+
+Only when intentionally using a separate API origin, override the base URL before
+starting the dev server or building the production frontend:
 
 ```bash
-export VITE_API_BASE=http://localhost:8000/api
+export VITE_API_BASE=https://api.example.com/api
 ```
 
-The default remains `http://localhost:8000/api`.
+Production dotenv settings belong in `frontend/.env.production`. Rebuild and
+redeploy the SPA after changing them; runtime backend environment changes do not
+affect an already built frontend. See [DEPLOYMENT.md](DEPLOYMENT.md#frontend-api-routing).
 
 ## Login Workflow
 
-1. The user navigates to <http://localhost:5173/>.
+1. The user navigates to <http://localhost:9000/> (or the deployed frontend URL).
 2. The router redirects unauthenticated users to `/login`.
 3. The login page shows a password-authentication selector with `Local Authentication` and `Central Authentication`.
 4. The user submits credentials.

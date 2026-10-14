@@ -49,7 +49,7 @@ Use the service management script to start/stop both backend and frontend:
 
 **Service Locations:**
 - Backend API: http://localhost:8000/api
-- Frontend UI: http://localhost:5173
+- Frontend UI: http://localhost:9000
 - Admin Panel: http://localhost:8000/admin
 - Backend Logs: `var/logs/backend.log`
 - Frontend Logs: `var/logs/frontend.log`
@@ -79,6 +79,12 @@ docker compose up --build
 ```
 
 Backend API will be available at http://localhost:8000/api
+
+The browser uses same-origin `/api` requests. Quasar proxies these to Django in
+development and Docker testing; nginx handles them in production. No public
+backend URL is needed for a same-origin deployment. See the
+[frontend API routing guide](docs/DEPLOYMENT.md#frontend-api-routing) for overrides
+and rebuilding existing deployments.
 
 ## Key Features
 
