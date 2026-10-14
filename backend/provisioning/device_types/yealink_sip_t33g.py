@@ -1227,6 +1227,8 @@ wifi = 2"""
                     f"account.{idx}.sip_server.2.invite_retry_counts = {invite_retry_count if line_secondary else ''}",
                     f"account.{idx}.sip_server.2.failback_mode = {failback_mode_map.get(failback_mode, 3) if line_secondary else ''}",
                     f"account.{idx}.sip_server.2.failback_timeout = {failback_duration if line_secondary else ''}",
+                    f"linekey.{idx}.type = 15",
+                    f"linekey.{idx}.line = {idx}",
                 ]
             )
 
@@ -1271,6 +1273,11 @@ wifi = 2"""
         # Disable all remaining account slots
         for idx in range(len(lines) + 1, self.NumberOfLines + 1):
             config_lines.append(f"account.{idx}.enable = 0")
+            config_lines.append(f"linekey.{idx}.value = 0")
+            config_lines.append(f"linekey.{idx}.type = 0")
+            config_lines.append(f"linekey.{idx}.label = ")
+            config_lines.append(f"linekey.{idx}.shortlabel = ")
+            config_lines.append(f"linekey.{idx}.line = 0")
 
         if override_line_4_as_speed_dial:
             config_lines.extend(
@@ -1282,5 +1289,7 @@ wifi = 2"""
                     f"linekey.4.value = {speed_dial_number}",
                 ]
             )
+  
+
 
         return "\n".join(config_lines)
